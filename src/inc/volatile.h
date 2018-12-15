@@ -59,6 +59,7 @@
 #define _VOLATILE_H_
 
 #include "staticcontract.h"
+#include "clr_std/type_traits"
 
 //
 // This code is extremely compiler- and CPU-specific, and will need to be altered to 
@@ -508,11 +509,11 @@ public:
 // VolatilePtr-specific clr::SafeAddRef and clr::SafeRelease
 namespace clr
 {
-    template < typename ItfT, typename PtrT > inline
+    template < typename ItfT, typename PtrT = ItfT* > inline
     #ifdef __checkReturn // Volatile.h is used in corunix headers, which don't define/nullify SAL.
         __checkReturn
     #endif
-    VolatilePtr<ItfT, PtrT>&
+    typename std::enable_if<!std::is_pointer<ItfT>::value, VolatilePtr<ItfT, PtrT>>::type&
     SafeAddRef(VolatilePtr<ItfT, PtrT>& pItf)
     {
         STATIC_CONTRACT_LIMITED_METHOD;
@@ -520,7 +521,7 @@ namespace clr
         return pItf;
     }
 
-    template < typename ItfT, typename PtrT > inline
+    template < typename ItfT, typename PtrT = ItfT * > inline
     ULONG
     SafeRelease(VolatilePtr<ItfT, PtrT>& pItf)
     {

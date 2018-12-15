@@ -19,7 +19,8 @@ void VoidStrongNameFreeBuffer(__in T *pBuffer)
 {
     StrongNameFreeBuffer(reinterpret_cast<BYTE *>(pBuffer));
 }
-NEW_WRAPPER_TEMPLATE1(StrongNameBufferHolder, VoidStrongNameFreeBuffer<_TYPE>);
+template <typename TYPE>
+using StrongNameBufferHolder = PreallocatedWrapper<TYPE, VoidStrongNameFreeBuffer<TYPE>>;
 
 #if defined(CROSSGEN_COMPILE) && !defined(PLATFORM_UNIX)
 // Holder for HCRYPTPROV handles directly allocated from CAPI

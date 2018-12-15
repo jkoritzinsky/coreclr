@@ -11021,8 +11021,7 @@ void CordbWin32EventThread::ThreadProc()
 }
 
 // Define a holder that calls code:DeleteIPCEventHelper
-NEW_WRAPPER_TEMPLATE1(DeleteIPCEventHolderHelper, DeleteIPCEventHelper);
-typedef DeleteIPCEventHolderHelper<DebuggerIPCEvent>  DeleteIPCEventHolder;
+using DeleteIPCEventHolder = PreallocatedWrapper<DebuggerIPCEvent, DeleteIPCEventHelper>;
 
 //---------------------------------------------------------------------------------------
 //

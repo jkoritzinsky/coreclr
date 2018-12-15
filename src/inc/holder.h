@@ -50,15 +50,12 @@
 // it must be declared as public. VC does not, so we can declare it private to give an
 // earlier error message.
 #define HIDE_GENERATED_METHODS(_NAME)                                                       \
-    public:                                                                                 \
-        _NAME(_NAME const &);                                                               \
-    private:                                                                                \
-        _NAME & operator=(_NAME const &);
+        _NAME(_NAME const &) = delete;                                                     \
+        _NAME & operator=(_NAME const &) = delete;
 #else
 #define HIDE_GENERATED_METHODS(_NAME)                                                       \
-    private:                                                                                \
-        _NAME(_NAME const &);                                                               \
-        _NAME & operator=(_NAME const &);
+        _NAME(_NAME const &) = delete;                                                    \
+        _NAME & operator=(_NAME const &) = delete;
 #endif
 
 #ifdef _DEBUG
@@ -264,6 +261,27 @@ class BaseHolder : protected BASE
     {
         Release();
     }
+
+    BaseHolder(const BaseHolder&) = delete;
+
+    BaseHolder& operator=(const BaseHolder&) = delete;
+
+    FORCEINLINE BaseHolder(BaseHolder&& other)
+        :BaseHolder()
+    {
+        STATIC_CONTRACT_WRAPPER;
+        *this = std::move(other);
+    }
+
+    FORCEINLINE BaseHolder& operator=(BaseHolder&& other)
+    {
+        STATIC_CONTRACT_WRAPPER;
+        this->m_value = other.m_value;
+        other.m_value = nullptr;
+        this->m_acquired = other.m_acquired;
+        other.m_acquired = FALSE;
+    }
+
     // Sets the value to 'value'. Doesn't call Acquire if value is DEFAULTVALUE.
     FORCEINLINE void Assign(TYPE value)
     {
@@ -325,8 +343,6 @@ class BaseHolder : protected BASE
         STATIC_CONTRACT_WRAPPER;
         return IS_NULL(this->m_value, TYPE(DEFAULTVALUE));
     }
-
-    HIDE_GENERATED_METHODS(BaseHolder)
 };  // BaseHolder<>
 
 template <void (*ACQUIRE)(), void (*RELEASEF)()>
@@ -343,6 +359,12 @@ class StateHolder
         if (take)
             Acquire();
     }
+
+    StateHolder(const StateHolder&) = delete;
+    StateHolder& operator=(const StateHolder&) = delete;
+    StateHolder(StateHolder&&) = default;
+    StateHolder& operator=(StateHolder&&) = default;
+
     FORCEINLINE ~StateHolder() 
     {
         STATIC_CONTRACT_WRAPPER;
@@ -384,8 +406,6 @@ class StateHolder
         STATIC_CONTRACT_LEAF;
         m_acquired = FALSE;
     }
-
-    HIDE_GENERATED_METHODS(StateHolder)
 };  // class StateHolder<>
 
 // Holder for the case where the acquire function can fail.
@@ -404,6 +424,12 @@ class ConditionalStateHolder
         if (take)
             Acquire();
     }
+
+    ConditionalStateHolder(const ConditionalStateHolder&) = delete;
+    ConditionalStateHolder& operator=(const ConditionalStateHolder&) = delete;
+    ConditionalStateHolder(ConditionalStateHolder&&) = default;
+    ConditionalStateHolder& operator=(ConditionalStateHolder&&) = default;
+
     FORCEINLINE ~ConditionalStateHolder() 
     {
         STATIC_CONTRACT_WRAPPER;
@@ -452,8 +478,6 @@ class ConditionalStateHolder
 
         return m_acquired;
     }
-
-    HIDE_GENERATED_METHODS(ConditionalStateHolder)
 };  // class ConditionalStateHolder<>
 
 
@@ -585,6 +609,12 @@ class BaseWrapper : public BaseHolder<TYPE, BASE, DEFAULTVALUE, IS_NULL>
         : BaseT(value, take)
     {
     }
+
+    BaseWrapper(const BaseWrapper&) = delete;
+    BaseWrapper& operator=(const BaseWrapper&) = delete;
+    BaseWrapper(BaseWrapper&&) = default;
+    BaseWrapper& operator=(BaseWrapper&&) = default;
+
     FORCEINLINE BaseWrapper& operator=(TYPE value)
     {
         BaseT::Assign(value);
@@ -628,9 +658,6 @@ class BaseWrapper : public BaseHolder<TYPE, BASE, DEFAULTVALUE, IS_NULL>
     {
         return this->IsNull();
     }
-
-  private:
-    HIDE_GENERATED_METHODS(BaseWrapper)
 };  // class BaseWrapper<>
 
 //-----------------------------------------------------------------------------
@@ -757,15 +784,27 @@ class Holder : public BaseHolder<TYPE, FunctionBase<TYPE, ACQUIREF, RELEASEF>,
         STATIC_CONTRACT_WRAPPER;
     }
 
+    Holder(const Holder&) = delete;
+    Holder& operator=(const Holder&) = delete;
+    Holder(Holder&&) = default;
+    Holder& operator=(Holder&&) = default;
+
     FORCEINLINE Holder& operator=(TYPE p)
     {
         STATIC_CONTRACT_WRAPPER;
         BaseT::operator=(p);
         return *this;
     }
-
-    HIDE_GENERATED_METHODS(Holder)
 };
+
+
+//---------------------------------------------------------------------------------------
+// - Cannot use the standard INDEBUG macro: holder.h is used in places where INDEBUG is defined in the nonstandard way
+#if defined(_DEBUG)
+#define INDEBUG_AND_WINDOWS_FOR_HOLDERS(x) x
+#else
+#define INDEBUG_AND_WINDOWS_FOR_HOLDERS(x)
+#endif 
 
 //---------------------------------------------------------------------------------------
 // 
@@ -792,19 +831,27 @@ class Wrapper : public BaseWrapper<TYPE, FunctionBase<TYPE, ACQUIREF, RELEASEF>,
         : BaseT(TYPE(DEFAULTVALUE), DEFAULT_CTOR_ACQUIRE)
     {
         STATIC_CONTRACT_WRAPPER;
+        INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)
     }
 
     FORCEINLINE Wrapper(TYPE value)
         : BaseT(value)
     {
         STATIC_CONTRACT_WRAPPER;
+        INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)
     }
 
     FORCEINLINE Wrapper(TYPE value, BOOL takeOwnership) 
         : BaseT(value, takeOwnership)
     {
         STATIC_CONTRACT_WRAPPER;
+        INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)
     }
+
+    Wrapper(const Wrapper&) = delete;
+    Wrapper& operator=(const Wrapper&) = delete;
+    Wrapper(Wrapper&&) = default;
+    Wrapper& operator=(Wrapper&&) = default;
 
     FORCEINLINE Wrapper& operator=(TYPE const & value)
     {
@@ -813,95 +860,16 @@ class Wrapper : public BaseWrapper<TYPE, FunctionBase<TYPE, ACQUIREF, RELEASEF>,
         return *this;
     }
 
-    HIDE_GENERATED_METHODS(Wrapper)
+    FORCEINLINE Wrapper* GetAddr()
+    {
+        STATIC_CONTRACT_LEAF;
+        return this;
+    }
+
+private:
+    INDEBUG_AND_WINDOWS_FOR_HOLDERS(TYPE* m_pvalue;)
 };  // Wrapper<>
 
-//---------------------------------------------------------------------------------------
-// - Cannot use the standard INDEBUG macro: holder.h is used in places where INDEBUG is defined in the nonstandard way
-#if defined(_DEBUG)
-#define INDEBUG_AND_WINDOWS_FOR_HOLDERS(x) x
-#else
-#define INDEBUG_AND_WINDOWS_FOR_HOLDERS(x)
-#endif 
-
-//---------------------------------------------------------------------------------------
-// 
-// New template wrapper type macros.   These save some effort when specializing
-// existing holder templates.  (We would rather use a construct like:
-//
-// template <P1>
-// typedef Holder<...> NewHolder;
-//
-// But this construct doesn't exist in C++.  These macros ease some of the cruft necessary
-// to get similar functionality out of class templates.
-//----------------------------------------------------------------------------- 
-
-// Dev10 VC++ has some of the new C++0x language extensions. Of particular interest here:
-// rvalue references, which enables differentiation between named (lvalue) and
-// temporary (rvalue) object references, enabling move semantics and perfect forwarding.
-// See http://msdn.microsoft.com/en-us/library/dd293668.aspx for more information.
-
-// Enable copy construction and assignment from temporary objects. This permits Wrapper objects
-// to be returned from methods, and for move assignment.
-#define NEW_WRAPPER_TEMPLATE_RVALREF_METHODS(_NAME)                                             \
-      public:                                                                                   \
-        FORCEINLINE _NAME(_NAME && other)                                                       \
-        : BaseT(NULL, FALSE)                                                                    \
-        {                                                                                       \
-            STATIC_CONTRACT_WRAPPER;                                                            \
-            INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)                               \
-            *this = std::move(other);                                                           \
-        }                                                                                       \
-        FORCEINLINE _NAME& operator=(_NAME && other)                                            \
-        {                                                                                       \
-            std::swap(BaseT::m_value, other.BaseT::m_value);                                    \
-            std::swap(BaseT::m_acquired, other.BaseT::m_acquired);                              \
-            return *this;                                                                       \
-        }
-
-#define NEW_WRAPPER_TEMPLATE1(_NAME, _RELEASEF)                                                 \
-    template <typename _TYPE>                                                                   \
-    class _NAME : public Wrapper<_TYPE*, DoNothing<_TYPE*>, _RELEASEF, NULL>                    \
-    {                                                                                           \
-        typedef Wrapper<_TYPE*, DoNothing<_TYPE*>, _RELEASEF, NULL> BaseT;                      \
-      public:                                                                                   \
-        FORCEINLINE _NAME() : BaseT(NULL, FALSE)                                                \
-        {                                                                                       \
-            STATIC_CONTRACT_WRAPPER;                                                            \
-            INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)                               \
-        }                                                                                       \
-        FORCEINLINE _NAME(_TYPE* value) : BaseT(value)                                          \
-        {                                                                                       \
-            STATIC_CONTRACT_WRAPPER;                                                            \
-            INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)                               \
-        }                                                                                       \
-        FORCEINLINE _NAME(_TYPE* value, BOOL takeOwnership) : BaseT(value, takeOwnership)       \
-        {                                                                                       \
-            STATIC_CONTRACT_WRAPPER;                                                            \
-            INDEBUG_AND_WINDOWS_FOR_HOLDERS(m_pvalue = &this->m_value;)                               \
-        }                                                                                       \
-        FORCEINLINE ~_NAME()                                                                    \
-        {                                                                                       \
-        }                                                                                       \
-        FORCEINLINE _NAME& operator=(_TYPE * value)                                             \
-        {                                                                                       \
-            STATIC_CONTRACT_WRAPPER;                                                            \
-            BaseT::operator=(value);                                                            \
-            return *this;                                                                       \
-        }                                                                                       \
-        /* Since operator& is overloaded we need a way to get a type safe this pointer. */      \
-        FORCEINLINE _NAME* GetAddr()                                                            \
-        {                                                                                       \
-            STATIC_CONTRACT_LEAF;                                                               \
-            return this;                                                                        \
-        }                                                                                       \
-        NEW_WRAPPER_TEMPLATE_RVALREF_METHODS(_NAME)                                             \
-        HIDE_GENERATED_METHODS(_NAME)                                                           \
-      private:                                                                                  \
-        /* m_ppValue: Do not use from source code: Only for convenient use from debugger */     \
-        /*     watch windows - saves five mouseclicks when inspecting holders. */               \
-        INDEBUG_AND_WINDOWS_FOR_HOLDERS(_TYPE ** m_pvalue;)                                     \
-    };
 
 //-----------------------------------------------------------------------------
 // NOTE: THIS IS UNSAFE TO USE IN THE VM for interop COM objects!!
@@ -930,11 +898,17 @@ FORCEINLINE void DoTheRelease(TYPE *value)
     }
 }
 
-NEW_WRAPPER_TEMPLATE1(DoNothingHolder, DoNothing<_TYPE*>);
+template<typename TYPE, void(*ReleaseF)(TYPE*)>
+using PreallocatedWrapper = Wrapper<TYPE*, DoNothing, ReleaseF, NULL>;
 
-NEW_WRAPPER_TEMPLATE1(ReleaseHolder, DoTheRelease<_TYPE>);
+template<typename TYPE>
+using DoNothingHolder = PreallocatedWrapper<TYPE, DoNothing>;
 
-NEW_WRAPPER_TEMPLATE1(NonVMComHolder, DoTheRelease<_TYPE>);
+template<typename TYPE>
+using ReleaseHolder = PreallocatedWrapper<TYPE, DoTheRelease<TYPE>>;
+
+template<typename TYPE>
+using NonVMComHolder = PreallocatedWrapper<TYPE, DoTheRelease<TYPE>>;
 
 
 //-----------------------------------------------------------------------------
@@ -957,7 +931,8 @@ FORCEINLINE void StubRelease(TYPE* value)
         value->DecRef();
 }
 
-NEW_WRAPPER_TEMPLATE1(StubHolder, StubRelease<_TYPE>);
+template <typename TYPE>
+using StubHolder = PreallocatedWrapper<TYPE, StubRelease<TYPE>>;
 
 //-----------------------------------------------------------------------------
 // CoTaskMemHolder : CoTaskMemAlloc allocated memory holder
@@ -974,7 +949,8 @@ FORCEINLINE void DeleteCoTaskMem(TYPE *value)
         CoTaskMemFree(value);
 }
 
-NEW_WRAPPER_TEMPLATE1(CoTaskMemHolder, DeleteCoTaskMem<_TYPE>);
+template <typename TYPE>
+using CoTaskMemHolder = PreallocatedWrapper<TYPE, DeleteCoTaskMem<TYPE>>;
 
 //-----------------------------------------------------------------------------
 // NewHolder : New'ed memory holder
@@ -997,7 +973,8 @@ FORCEINLINE void Delete(TYPE *value)
     delete value;
 }
 
-NEW_WRAPPER_TEMPLATE1(NewHolder, Delete<_TYPE>);
+template <typename TYPE>
+using NewHolder = PreallocatedWrapper<TYPE, Delete<TYPE>>;
 
  //-----------------------------------------------------------------------------
 // NewExecutableHolder : New'ed memory holder for executable memory.
@@ -1009,7 +986,8 @@ NEW_WRAPPER_TEMPLATE1(NewHolder, Delete<_TYPE>);
 // IJW
 template<class T> void DeleteExecutable(T *p);
 
-NEW_WRAPPER_TEMPLATE1(NewExecutableHolder, DeleteExecutable<_TYPE>);
+template <typename TYPE>
+using NewExecutableHolder = PreallocatedWrapper<TYPE, DeleteExecutable<TYPE>>;
  
 //-----------------------------------------------------------------------------
 // NewArrayHolder : New []'ed pointer holder
@@ -1026,7 +1004,8 @@ FORCEINLINE void DeleteArray(TYPE *value)
     value = NULL;
 }
 
-NEW_WRAPPER_TEMPLATE1(NewArrayHolder, DeleteArray<_TYPE>);
+template <typename TYPE>
+using NewArrayHolder = PreallocatedWrapper<TYPE, DeleteArray<TYPE>>;
 typedef NewArrayHolder<CHAR>  AStringHolder;
 typedef NewArrayHolder<WCHAR> WStringHolder;
 
@@ -1113,8 +1092,10 @@ namespace detail
 }
 #undef VISIBLE
 
-NEW_WRAPPER_TEMPLATE1(ResetPointerHolder, detail::ZeroMem<_TYPE>::Invoke);
-NEW_WRAPPER_TEMPLATE1(FieldNuller, detail::ZeroMem<_TYPE>::Invoke);
+template <typename TYPE>
+using ResetPointerHolder = PreallocatedWrapper<TYPE, detail::ZeroMem<TYPE>::Invoke>;
+template <typename TYPE>
+using FieldNuller = PreallocatedWrapper<TYPE, detail::ZeroMem<TYPE>::Invoke>;
 
 //-----------------------------------------------------------------------------
 // Wrap win32 functions using HANDLE
@@ -1157,7 +1138,8 @@ typedef Wrapper<HMODULE, DoNothing<HMODULE>, HolderFreeLibrary, NULL> HModuleHol
 template <typename T> FORCEINLINE
 void DoLocalFree(T* pMem) { (LocalFree)((HLOCAL)pMem); }
 
-NEW_WRAPPER_TEMPLATE1(LocalAllocHolder, DoLocalFree<_TYPE>);
+template <typename TYPE>
+using LocalAllocHolder = PreallocatedWrapper<TYPE, DoLocalFree<TYPE>>;
 
 inline void BoolSet( _Out_ bool * val ) { *val = true; }
 inline void BoolUnset( _Out_ bool * val ) { *val = false; }
@@ -1365,7 +1347,7 @@ namespace clr
     SafeAddRef(ItfT pItf);
 
     template < typename ItfT > __checkReturn
-    ItfT *
+    typename std::enable_if<!std::is_pointer<ItfT>::value, ItfT* >::type
     SafeAddRef(ReleaseHolder<ItfT> & pItf)
     {
         STATIC_CONTRACT_LIMITED_METHOD;

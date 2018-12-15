@@ -287,7 +287,8 @@ inline void Exception__Delete<Exception>(Exception* pvMemory)
   Exception::Delete(pvMemory);
 }
 
-NEW_WRAPPER_TEMPLATE1(ExceptionHolderTemplate, Exception__Delete<_TYPE>);
+template <typename TYPE>
+using ExceptionHolderTemplate = PreallocatedWrapper<TYPE, Exception__Delete<TYPE>>;
 typedef ExceptionHolderTemplate<Exception> ExceptionHolder;
 #else
 

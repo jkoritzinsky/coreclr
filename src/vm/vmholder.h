@@ -18,6 +18,7 @@ inline void DoTheReleaseHost(TYPE *value)
     }
 }
 
-NEW_WRAPPER_TEMPLATE1(HostComHolder, DoTheReleaseHost<_TYPE>);
+template <typename TYPE>
+using HostComHolder = PreallocatedWrapper<TYPE, DoTheReleaseHost<TYPE>>;
 
 #endif

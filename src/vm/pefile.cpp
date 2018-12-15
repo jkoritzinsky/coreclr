@@ -197,7 +197,8 @@ template<class T> void CoTaskFree(T *p)
 }
 
 
-NEW_WRAPPER_TEMPLATE1(CoTaskNewHolder, CoTaskFree<_TYPE>);
+template <typename TYPE>
+using CoTaskNewHolder = PreallocatedWrapper<TYPE, CoTaskFree<TYPE>>;
 
 
 //-----------------------------------------------------------------------------------------------------

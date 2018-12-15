@@ -19,8 +19,6 @@ typedef PACKAGE_INFO const *        PCPACKAGE_INFO;
 
 //---------------------------------------------------------------------------------------------
 // Forward declarations
-template <typename T>
-class NewArrayHolder;
 BOOL WinRTSupported();
 
 
