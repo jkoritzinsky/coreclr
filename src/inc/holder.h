@@ -280,6 +280,7 @@ class BaseHolder : protected BASE
         other.m_value = nullptr;
         this->m_acquired = other.m_acquired;
         other.m_acquired = FALSE;
+        return *this;
     }
 
     // Sets the value to 'value'. Doesn't call Acquire if value is DEFAULTVALUE.
@@ -905,10 +906,10 @@ template<typename TYPE>
 using DoNothingHolder = PreallocatedWrapper<TYPE, DoNothing>;
 
 template<typename TYPE>
-using ReleaseHolder = PreallocatedWrapper<TYPE, DoTheRelease<TYPE>>;
+using ReleaseHolder = PreallocatedWrapper<TYPE, DoTheRelease>;
 
 template<typename TYPE>
-using NonVMComHolder = PreallocatedWrapper<TYPE, DoTheRelease<TYPE>>;
+using NonVMComHolder = PreallocatedWrapper<TYPE, DoTheRelease>;
 
 
 //-----------------------------------------------------------------------------
@@ -1343,7 +1344,7 @@ namespace clr
     // Forward declare the overload which is used by 'SafeAddRef' below.
     template <typename ItfT>
     static inline
-    typename std::enable_if< std::is_pointer<ItfT>::value, ItfT >::type
+    typename std::enable_if<std::is_pointer<ItfT>::value, ItfT>::type
     SafeAddRef(ItfT pItf);
 
     template < typename ItfT > __checkReturn

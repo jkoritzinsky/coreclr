@@ -5274,7 +5274,7 @@ namespace clr
     //=================================================================================================================
     template <typename ItfT>
     static inline 
-    typename std::enable_if< std::is_pointer<ItfT>::value, ItfT >::type
+    typename std::enable_if<std::is_pointer<ItfT>::value, ItfT>::type
     SafeAddRef(ItfT pItf)
     {
         STATIC_CONTRACT_LIMITED_METHOD;

@@ -1117,7 +1117,7 @@ HRESULT CLRPrivAssemblyWinRT::GetImageResource(
         }
         else if ((dwImageType & ASSEMBLY_IMAGE_TYPE_IL) == ASSEMBLY_IMAGE_TYPE_IL)
         {
-            *ppIResource = clr::SafeAddRef(m_pResourceIL);
+            *ppIResource = clr::SafeAddRef<CLRPrivBinderUtil::CLRPrivResourcePathImpl>(m_pResourceIL);
             *pdwImageType = ASSEMBLY_IMAGE_TYPE_IL;
         }
         else
@@ -1154,7 +1154,7 @@ HRESULT CLRPrivAssemblyWinRT::GetIBindResult(
     VALIDATE_ARG_RET(ppIBindResult != nullptr);
     VALIDATE_CONDITION((m_pIBindResult != nullptr), return E_UNEXPECTED);
     
-    *ppIBindResult = clr::SafeAddRef(m_pIBindResult);
+    *ppIBindResult = clr::SafeAddRef<IBindResult*>(m_pIBindResult);
     
     return S_OK;
 }
