@@ -3,7 +3,10 @@ if (WIN32)
   add_compile_options(/wd4365)
 
   # IJW
-  add_compile_options(/clr)
+  add_compile_options(/clr:netcore)
+
+  # IJW on .NET Core needs paths to the runtime ref assemblies.
+  add_compile_options(/AI${CMAKE_SOURCE_DIR}/../.dotnet/packs/Microsoft.NETCore.App.Ref/${DOTNET_RUNTIME_VERSION}/ref/netcoreapp3.0)
 
   # IJW requires the CRT as a dll, not linked in
   add_compile_options(/MD$<$<OR:$<CONFIG:Debug>,$<CONFIG:Checked>>:d>)

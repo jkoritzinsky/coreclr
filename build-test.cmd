@@ -226,14 +226,15 @@ if not defined VSINSTALLDIR (
 )
 if not exist "%VSINSTALLDIR%DIA SDK" goto NoDIA
 
-set __ExtraCmakeArgs="-DCMAKE_SYSTEM_VERSION=10.0"
-call "%__SourceDir%\pal\tools\gen-buildsys.cmd" "%__ProjectFilesDir%" "%__NativeTestIntermediatesDir%" %__VSVersion% %__BuildArch% !__ExtraCmakeArgs!
-  
-if not !errorlevel! == 0 (
-    echo %__ErrMsgPrefix%%__MsgPrefix%Error: failed to generate native component build project!
-    exit /b 1
+for /f "tokens=*" %%s in ('call "%__ProjectDir%\dotnet.cmd" msbuild "%__TestDir%\dumpbundledruntimeversion.proj" /t:DumpBundledRuntimeVersion /nologo') do @(
+    set __BundledRuntimeVersion=%%s
 )
 
+echo "Bundled runtime version is: '!__BundledRuntimeVersion!'"
+
+pushd "%__NativeTestIntermediatesDir%"
+set __ExtraCmakeArgs="-DCMAKE_SYSTEM_VERSION=10.0" "-DDOTNET_RUNTIME_VERSION=!__BundledRuntimeVersion!"
+call "%__SourceDir%\pal\tools\gen-buildsys.cmd" "%__ProjectFilesDir%" "%__NativeTestIntermediatesDir%" %__VSVersion% %__BuildArch% !__ExtraCmakeArgs!
 @if defined _echo @echo on
 
 if not exist "%__NativeTestIntermediatesDir%\CMakeCache.txt" (

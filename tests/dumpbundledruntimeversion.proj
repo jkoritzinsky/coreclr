@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Target Name="DumpBundledRuntimeVersion">
+    <Message Importance="high" Text="$(BundledNETCoreAppPackageVersion)" />
+  </Target>
+</Project>

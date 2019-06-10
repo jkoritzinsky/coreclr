@@ -7,5 +7,9 @@ set(SOURCES mscoree.cpp)
 add_library (mscoree SHARED ${SOURCES})
 target_link_libraries(mscoree ${LINK_LIBRARIES_ADDITIONAL})
 
+add_library (ijwhost SHARED ${SOURCES})
+target_link_libraries(ijwhost ${LINK_LIBRARIES_ADDITIONAL})
+
 # add the install targets
 install (TARGETS mscoree DESTINATION bin)
+install (TARGETS ijwhost DESTINATION bin)

@@ -21,7 +21,7 @@ namespace CopyConstructorMarshaler
 
             try
             {
-                Assembly ijwNativeDll = IjwHelper.LoadIjwAssembly("IjwCopyConstructorMarshaler");
+                Assembly ijwNativeDll = Assembly.Load("IjwCopyConstructorMarshaler");
                 Type testType = ijwNativeDll.GetType("TestClass");
                 object testInstance = Activator.CreateInstance(testType);
                 MethodInfo testMethod = testType.GetMethod("PInvokeNumCopies");
