@@ -53,11 +53,5 @@ namespace CopyConstructorMarshaler
             }
             return 100;
         }
-
-        [DllImport("kernel32.dll")]
-        static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hReservedNull, int dwFlags);
-
-        [DllImport("kernel32.dll")]
-        static extern IntPtr GetModuleHandle(string lpModuleName);
     }
 }

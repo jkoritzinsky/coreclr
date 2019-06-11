@@ -45,8 +45,5 @@ namespace FixupCallsHostWhenLoaded
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         delegate bool WasModuleVTableQueriedDelegate(IntPtr handle);
-
-        [DllImport("kernel32.dll")]
-        static extern IntPtr GetModuleHandle(string lpModuleName);
     }
 }

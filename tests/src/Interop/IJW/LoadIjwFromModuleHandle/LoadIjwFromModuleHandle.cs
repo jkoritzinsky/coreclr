@@ -80,6 +80,5 @@ namespace LoadIjwFromModuleHandle
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         delegate int NativeEntryPointDelegate();
-
     }
 }
