@@ -230,8 +230,6 @@ for /f "tokens=*" %%s in ('call "%__ProjectDir%\dotnet.cmd" msbuild "%__TestDir%
     set __BundledRuntimeVersion=%%s
 )
 
-echo "Bundled runtime version is: '!__BundledRuntimeVersion!'"
-
 pushd "%__NativeTestIntermediatesDir%"
 set __ExtraCmakeArgs="-DCMAKE_SYSTEM_VERSION=10.0" "-DDOTNET_RUNTIME_VERSION=!__BundledRuntimeVersion!"
 call "%__SourceDir%\pal\tools\gen-buildsys.cmd" "%__ProjectFilesDir%" "%__NativeTestIntermediatesDir%" %__VSVersion% %__BuildArch% !__ExtraCmakeArgs!
