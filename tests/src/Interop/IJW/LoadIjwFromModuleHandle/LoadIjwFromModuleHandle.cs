@@ -17,8 +17,7 @@ namespace LoadIjwFromModuleHandle
     {
         unsafe static int Main(string[] args)
         {
-            // Disable running on Windows 7 until IJW activation work is complete.
-            if(Environment.OSVersion.Platform != PlatformID.Win32NT || (Environment.OSVersion.Version.Major == 6 && Environment.OSVersion.Version.Minor == 1))
+            if(Environment.OSVersion.Platform != PlatformID.Win32NT)
             {
                 return 100;
             }
