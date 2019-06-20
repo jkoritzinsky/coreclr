@@ -2724,6 +2724,7 @@ MarshalerOverrideStatus ILSafeHandleMarshaler::ArgumentOverride(NDirectStubLinke
             // Don't use the CleanupWorkList here.
             // We can't afford allocating for every SafeHandle by-value argument.
             // Instead, duplicate what the CleanupWorkList does as raw IL instructions here.
+            psl->SetCleanupNeeded();
             DWORD dwNativeHandle = pslIL->NewLocal(ELEMENT_TYPE_I);
             DWORD dwAddRefd = pslIL->NewLocal(ELEMENT_TYPE_BOOLEAN);
             ILCodeStream* pslILCleanup = psl->GetCleanupCodeStream();
@@ -2732,7 +2733,9 @@ MarshalerOverrideStatus ILSafeHandleMarshaler::ArgumentOverride(NDirectStubLinke
             pslIL->EmitLDLOCA(dwAddRefd);
             pslIL->EmitCALL(METHOD__STUBHELPERS__SAFE_HANDLE_ADD_REF, 2, 1);
             pslIL->EmitSTLOC(dwNativeHandle);
+
             pslILDispatch->EmitLDLOC(dwNativeHandle);
+
             pslILCleanup->EmitLDLOC(dwAddRefd);
             ILCodeLabel* pAfterReleaseLabel = pslILCleanup->NewCodeLabel();
             pslILCleanup->EmitBRFALSE(pAfterReleaseLabel);

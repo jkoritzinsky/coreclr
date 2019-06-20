@@ -1550,6 +1550,7 @@ protected:
     void EmitKeepAliveManagedValue()
     {
         // Don't use the cleanup work list to avoid any extra allocations.
+        m_pslNDirect->SetCleanupNeeded();
         ILCodeStream* pslILEmit = m_pslNDirect->GetCleanupCodeStream();
         EmitLoadValueToKeepAlive(pslILEmit);
         pslILEmit->EmitCALL(METHOD__GC__KEEP_ALIVE, 1, 0);
