@@ -78,17 +78,7 @@ void ILReflectionObjectMarshaler::EmitConvertContentsCLRToNative(ILCodeStream* p
 
     if (IsCLRToNative(m_dwMarshalFlags))
     {
-        EmitLoadCleanupWorkList(pslILEmit);
-        if (tokStruct__m_object != 0)
-        {
-            EmitLoadManagedHomeAddr(pslILEmit);
-            pslILEmit->EmitLDFLD(tokStruct__m_object);
-        }
-        else
-        {
-            EmitLoadManagedValue(pslILEmit);
-        }
-        pslILEmit->EmitCALL(METHOD__STUBHELPERS__KEEP_ALIVE_VIA_CLEANUP_LIST, 2, 0);
+        EmitKeepAliveManagedValue();
     }
 }
 
@@ -128,9 +118,7 @@ void ILDelegateMarshaler::EmitConvertContentsCLRToNative(ILCodeStream* pslILEmit
     EmitLoadManagedValue(pslILEmit);
     pslILEmit->EmitCALL(METHOD__MARSHAL__GET_FUNCTION_POINTER_FOR_DELEGATE, 1, 1);
     EmitStoreNativeValue(pslILEmit);
-    EmitLoadCleanupWorkList(pslILEmit);
-    EmitLoadManagedValue(pslILEmit);
-    pslILEmit->EmitCALL(METHOD__STUBHELPERS__KEEP_ALIVE_VIA_CLEANUP_LIST, 2, 0);
+    EmitKeepAliveManagedValue();
     
     pslILEmit->EmitLabel(pNullLabel);
 }
@@ -1368,9 +1356,7 @@ void ILInterfaceMarshaler::EmitConvertContentsCLRToNative(ILCodeStream* pslILEmi
         //
         // The fix is to extend the lifetime of the argument across the call to native by doing a GC.KeepAlive
         // keep the delegate ref alive across the call-out to native
-        EmitLoadCleanupWorkList(pslILEmit);
-        EmitLoadManagedValue(pslILEmit);
-        pslILEmit->EmitCALL(METHOD__STUBHELPERS__KEEP_ALIVE_VIA_CLEANUP_LIST, 2, 0);
+        EmitKeepAliveManagedValue();
     }
 }
 
