@@ -1911,27 +1911,9 @@ FCIMPL3(Object*, MarshalNative::GetMethodInfoForComSlot, ReflectClassBaseObject*
         COMPlusThrowArgumentOutOfRange(W("slot"), W("ArgumentOutOfRange_Count"));
 
     ComMTMethodProps *pProps = &rProps[slot - StartSlot];
-    if (pProps->semantic >= FieldSemanticOffset)
+    if (pProps->property == mdPropertyNil)
     {
-        // We are dealing with a field.
-        ComCallMethodDesc *pFieldMeth = reinterpret_cast<ComCallMethodDesc*>(pProps->pMeth);
-        FieldDesc *pField = pFieldMeth->GetFieldDesc();
-
-        // call the managed code to get the FieldInfo
-        MethodDescCallSite getFieldInfo(METHOD__CLASS__GET_FIELD_INFO);
-        ARG_SLOT args[] =
-        {
-            ObjToArgSlot(tInterface),
-            (ARG_SLOT)pField
-        };
-        
-        MemberInfoObj = getFieldInfo.Call_RetOBJECTREF(args);
-
-        *(pMemberType) = (pProps->semantic == (FieldSemanticOffset + msGetter)) ? CMT_PropGet : CMT_PropSet;
-    }
-    else if (pProps->property == mdPropertyNil)
-    {
-        // We are dealing with a normal property.
+        // We are dealing with a normal method.
 
         // call the managed code to get the MethodInfo
         MethodDescCallSite getMethodBase(METHOD__CLASS__GET_METHOD_BASE);

@@ -26,7 +26,6 @@ class MethodDesc;
 
 
 // Constants.
-static const unsigned int   FieldSemanticOffset =       100;
 static LPCSTR               szInitName =                COR_CTOR_METHOD_NAME; // not unicode
 static LPCWSTR              szInitNameUse =             W("Init");
 static LPCWSTR              szDefaultToString =         W("ToString");

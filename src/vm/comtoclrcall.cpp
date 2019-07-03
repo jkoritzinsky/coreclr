@@ -46,13 +46,8 @@
 #if !defined(DACCESS_COMPILE)
 
 #ifdef _TARGET_X86_
-static PCODE g_pGenericComCallStubFields = NULL;
 static PCODE g_pGenericComCallStub       = NULL;
 #endif
-
-UINT64 FieldCallWorker(Thread *pThread, ComMethodFrame* pFrame);
-void FieldCallWorkerDebuggerWrapper(Thread *pThread, ComMethodFrame* pFrame);
-void FieldCallWorkerBody(Thread *pThread, ComMethodFrame* pFrame);
 
 #ifndef CROSSGEN_COMPILE
 //---------------------------------------------------------
@@ -65,10 +60,10 @@ static void SetupGenericStubs()
     STANDARD_VM_CONTRACT;
     
 #ifdef _TARGET_X86_
-    if ( (g_pGenericComCallStubFields != NULL) && (g_pGenericComCallStub != NULL))
+    if (g_pGenericComCallStub != NULL)
         return;
 
-    StubHolder<Stub> candidateCall, candidateFields;
+    StubHolder<Stub> candidateCall;
 
     // Build each one.  If we get a collision on replacement, favor the one that's
     // already there.  (We have lifetime issues with these, because they are used
@@ -77,14 +72,10 @@ static void SetupGenericStubs()
 
     // Allocate all three before setting - if an error occurs, we'll free the 
     //  memory via holder objects and throw.
-    candidateCall = ComCall::CreateGenericComCallStub(FALSE/*notField*/);
-    candidateFields = ComCall::CreateGenericComCallStub(TRUE/*Field*/);
+    candidateCall = ComCall::CreateGenericComCallStub();
 
     if (InterlockedCompareExchangeT<PCODE>(&g_pGenericComCallStub, candidateCall->GetEntryPoint(), 0) == 0)
         candidateCall.SuppressRelease();
-
-    if (InterlockedCompareExchangeT<PCODE>(&g_pGenericComCallStubFields, candidateFields->GetEntryPoint(), 0) == 0)
-        candidateFields.SuppressRelease();
 #endif // _TARGET_X86_
 }
 
@@ -611,22 +602,13 @@ extern "C" UINT64 __stdcall COMToCLRWorker(Thread *pThread, ComMethodFrame* pFra
     _ASSERTE(pThread->PreemptiveGCDisabled());
 
     {
-#ifndef _TARGET_X86_
-        if (pCMD->IsFieldCall())
-        {
-            retVal = FieldCallWorker(pThread, pFrame);
-        }
-        else
-#endif // !_TARGET_X86_
-        {
-            IUnknown **pip = (IUnknown **)pFrame->GetPointerToArguments();
-            IUnknown *pUnk = (IUnknown *)*pip; 
-            _ASSERTE(pUnk != NULL);
+        IUnknown **pip = (IUnknown **)pFrame->GetPointerToArguments();
+        IUnknown *pUnk = (IUnknown *)*pip; 
+        _ASSERTE(pUnk != NULL);
 
-            // Obtain the managed 'this' for the call
-            ComCallWrapper *pWrap = ComCallWrapper::GetWrapperFromIP(pUnk);
-            COMToCLRWorkerBody(pThread, pFrame, pWrap, &retVal);
-        }
+        // Obtain the managed 'this' for the call
+        ComCallWrapper *pWrap = ComCallWrapper::GetWrapperFromIP(pUnk);
+        COMToCLRWorkerBody(pThread, pFrame, pWrap, &retVal);
     }
 
 #ifndef _TARGET_X86_
@@ -685,134 +667,6 @@ ErrorExit:
 #pragma optimize("", on)   // restore settings
 #endif 
 
-
-static UINT64 __stdcall FieldCallWorker(Thread *pThread, ComMethodFrame* pFrame)
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-        ENTRY_POINT;
-        PRECONDITION(CheckPointer(pThread));
-        PRECONDITION(CheckPointer(pFrame));
-    }
-    CONTRACTL_END;
-
-    LOG((LF_STUBS, LL_INFO1000000, "FieldCallWorker enter\n"));
-    
-    HRESULT hrRetVal = S_OK;
-
-    IUnknown** pip = (IUnknown **)pFrame->GetPointerToArguments();
-    IUnknown* pUnk = (IUnknown *)*pip; 
-    _ASSERTE(pUnk != NULL);
-
-    ComCallWrapper* pWrap =  ComCallWrapper::GetWrapperFromIP(pUnk);
-    _ASSERTE(pWrap != NULL);
-        
-    GCX_ASSERT_COOP();
-    OBJECTREF pThrowable = NULL;
-    GCPROTECT_BEGIN(pThrowable);
-    {
-        EX_TRY
-        {
-            FieldCallWorkerDebuggerWrapper(pThread, pFrame);
-        }
-        EX_CATCH
-        {
-            pThrowable = GET_THROWABLE();
-        }
-        EX_END_CATCH(SwallowAllExceptions);
-
-        if (pThrowable != NULL)
-        {
-            // Transform the exception into an HRESULT. This also sets up
-            // an IErrorInfo on the current thread for the exception.
-            hrRetVal = SetupErrorInfo(pThrowable, pFrame->GetComCallMethodDesc());
-        }
-    }
-
-    GCPROTECT_END();
-
-    LOG((LF_STUBS, LL_INFO1000000, "FieldCallWorker leave\n"));
-
-    return hrRetVal;
-}
-
-static void FieldCallWorkerDebuggerWrapper(Thread *pThread, ComMethodFrame* pFrame)
-{
-    // Use static contracts b/c we have SEH.
-    STATIC_CONTRACT_THROWS;
-    STATIC_CONTRACT_GC_TRIGGERS;
-    STATIC_CONTRACT_MODE_ANY;
-
-    struct Param : public NotifyOfCHFFilterWrapperParam {
-        Thread*         pThread;
-    } param;
-    param.pFrame = pFrame;
-    param.pThread = pThread;
-
-    // @todo - we have a PAL_TRY/PAL_EXCEPT here as a general (cross-platform) way to get a 1st-pass
-    // filter. If that's bad perf, we could inline an FS:0 handler for x86-only; and then inline
-    // both this wrapper and the main body.
-    PAL_TRY(Param *, pParam, &param)
-    {
-        FieldCallWorkerBody(pParam->pThread, (ComMethodFrame*)pParam->pFrame);
-    }
-    PAL_EXCEPT_FILTER(NotifyOfCHFFilterWrapper)
-    {
-        // Should never reach here b/c handler should always continue search.
-        _ASSERTE(false);
-    }
-    PAL_ENDTRY
-}
-
-static void FieldCallWorkerBody(Thread *pThread, ComMethodFrame* pFrame)
-{
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_ANY;     // Dependant on machine type (X86 sets COOP in stub)
-        PRECONDITION(CheckPointer(pThread));
-        PRECONDITION(CheckPointer(pFrame));
-    }
-    CONTRACTL_END;
-    
-    IUnknown** pip = (IUnknown **)pFrame->GetPointerToArguments();
-    IUnknown* pUnk = (IUnknown *)*pip; 
-    _ASSERTE(pUnk != NULL);
-
-    ComCallWrapper* pWrap =  ComCallWrapper::GetWrapperFromIP(pUnk);
-    _ASSERTE(pWrap != NULL);
-
-    ComCallMethodDesc *pCMD = pFrame->GetComCallMethodDesc();
-    _ASSERTE(pCMD->IsFieldCall());      
-    _ASSERTE(pCMD->IsNativeHResultRetVal());
-
-#ifdef PROFILING_SUPPORTED
-    // Notify the profiler of the call into the runtime.
-    // 32-bit does this callback in the stubs before calling into FieldCallWorker().
-    if (CORProfilerTrackTransitions())
-    {
-        MethodDesc* pMD = pCMD->GetMethodDesc();
-        ProfilerTransitionCallbackHelper(pMD, pThread, COR_PRF_TRANSITION_CALL);
-    }
-#endif // PROFILING_SUPPORTED
-
-    UINT64 retVal;
-    InvokeStub(pCMD, NULL, pWrap->GetObjectRef(), pFrame, pThread, &retVal);
-
-#ifdef PROFILING_SUPPORTED
-    // Notify the profiler of the return out of the runtime.
-    if (CORProfilerTrackTransitions())
-    {
-        MethodDesc* pMD = pCMD->GetMethodDesc();
-        ProfilerTransitionCallbackHelper(pMD, pThread, COR_PRF_TRANSITION_RETURN);
-    }
-#endif // PROFILING_SUPPORTED
-}
-
 //---------------------------------------------------------
 PCODE ComCallMethodDesc::CreateCOMToCLRStub(DWORD dwStubFlags, MethodDesc **ppStubMD)
 {
@@ -827,27 +681,19 @@ PCODE ComCallMethodDesc::CreateCOMToCLRStub(DWORD dwStubFlags, MethodDesc **ppSt
 
     MethodDesc * pStubMD;
 
-    if (IsFieldCall())
-    {
-        FieldDesc *pFD = GetFieldDesc();
-        pStubMD = ComCall::GetILStubMethodDesc(pFD, dwStubFlags);
-    }
-    else
-    {
-        // if this represents a ctor or static, use the class method (i.e. the actual ctor or static)
-        MethodDesc *pMD = ((IsWinRTCtor() || IsWinRTStatic()) ? GetMethodDesc() : GetCallMethodDesc());
+    // if this represents a ctor or static, use the class method (i.e. the actual ctor or static)
+    MethodDesc *pMD = ((IsWinRTCtor() || IsWinRTStatic()) ? GetMethodDesc() : GetCallMethodDesc());
 
-        // first see if we have an NGENed stub
-        pStubMD = GetStubMethodDescFromInteropMethodDesc(pMD, dwStubFlags);
-        if (pStubMD != NULL)
-        {
-            pStubMD = RestoreNGENedStub(pStubMD);
-        }
-        if (pStubMD == NULL)
-        {
-            // no NGENed stub - create a new one
-            pStubMD = ComCall::GetILStubMethodDesc(pMD, dwStubFlags);
-        }
+    // first see if we have an NGENed stub
+    pStubMD = GetStubMethodDescFromInteropMethodDesc(pMD, dwStubFlags);
+    if (pStubMD != NULL)
+    {
+        pStubMD = RestoreNGENedStub(pStubMD);
+    }
+    if (pStubMD == NULL)
+    {
+        // no NGENed stub - create a new one
+        pStubMD = ComCall::GetILStubMethodDesc(pMD, dwStubFlags);
     }
 
     *ppStubMD = pStubMD;
@@ -1037,33 +883,6 @@ void ComCallMethodDesc::InitMethod(MethodDesc *pMD, MethodDesc *pInterfaceMD, BO
     }
 }
 
-void ComCallMethodDesc::InitField(FieldDesc* pFD, BOOL isGetter)
-{
-    CONTRACTL
-    {
-        STANDARD_VM_CHECK;
-        PRECONDITION(CheckPointer(pFD));
-    }
-    CONTRACTL_END;
-
-    m_pFD = pFD;
-    m_pILStub = NULL;
-
-#ifdef _TARGET_X86_
-    m_dwSlotInfo = 0;
-    m_pwStubStackSlotOffsets = NULL;
-#endif // _TARGET_X86_
-
-    m_flags = enum_IsFieldCall; // mark the attribute as a field
-    m_flags |= isGetter ? enum_IsGetter : 0;
-
-    if (!SystemDomain::GetCurrentDomain()->IsCompilationDomain())
-    {
-        // Initialize the native type information size of native stack, native retval flags, etc).
-        InitNativeInfo();
-    }
-};
-
 // Initialize the member's native type information (size of native stack, native retval flags, etc).
 // It is unfortunate that we have to touch all this metadata at creation time. The reason for this
 // is that we need to know size of the native stack to be able to return back to unmanaged code in
@@ -1088,264 +907,214 @@ void ComCallMethodDesc::InitNativeInfo()
         UINT16 nativeArgSize;
 #endif
 
-        if (IsFieldCall())
-        {
-            FieldDesc          *pFD = GetFieldDesc();
-            _ASSERTE(pFD != NULL);
+
+        MethodDesc *pMD = GetCallMethodDesc();
 
 #ifdef _DEBUG
-            LPCUTF8             szDebugName = pFD->GetDebugName();
-            LPCUTF8             szDebugClassName = pFD->GetEnclosingMethodTable()->GetDebugClassName();
+        LPCUTF8         szDebugName = pMD->m_pszDebugMethodName;
+        LPCUTF8         szDebugClassName = pMD->m_pszDebugClassName;
 
-            if (g_pConfig->ShouldBreakOnComToClrNativeInfoInit(szDebugName))
-                CONSISTENCY_CHECK_MSGF(false, ("BreakOnComToClrNativeInfoInit: '%s' ", szDebugName));
+        if (g_pConfig->ShouldBreakOnComToClrNativeInfoInit(szDebugName))
+            CONSISTENCY_CHECK_MSGF(false, ("BreakOnComToClrNativeInfoInit: '%s' ", szDebugName));
 #endif // _DEBUG
-            
-#ifdef _TARGET_X86_
-            MetaSig fsig(pFD);
-            fsig.NextArg();
 
-            // Look up the best fit mapping info via Assembly & Interface level attributes
-            BOOL BestFit = TRUE;
-            BOOL ThrowOnUnmappableChar = FALSE;
-            ReadBestFitCustomAttribute(fsig.GetModule(), pFD->GetEnclosingMethodTable()->GetCl(), &BestFit, &ThrowOnUnmappableChar);
+        MethodTable * pMT = pMD->GetMethodTable();
+        IMDInternalImport * pInternalImport = pMT->GetMDImport();
 
-            MarshalInfo info(fsig.GetModule(), fsig.GetArgProps(), fsig.GetSigTypeContext(), pFD->GetMemberDef(), MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
-                             (CorNativeLinkType)0, (CorNativeLinkFlags)0, 
-                             FALSE, 0, fsig.NumFixedArgs(), BestFit, ThrowOnUnmappableChar, FALSE, TRUE, NULL, FALSE
-#ifdef _DEBUG
-                             , szDebugName, szDebugClassName, 0
+        mdMethodDef md = pMD->GetMemberDef();
+
+        ULONG ulCodeRVA;
+        DWORD dwImplFlags;
+        IfFailThrow(pInternalImport->GetMethodImplProps(md, &ulCodeRVA, &dwImplFlags));
+        
+        // Determine if we need to do HRESULT munging for this method.
+        BOOL fPreserveSig = IsMiPreserveSig(dwImplFlags);
+        
+        MetaSig msig(pMD);
+
+#ifndef _TARGET_X86_
+        if (!fPreserveSig)
+        {
+            // PreserveSig=false methods always return HRESULTs. 
+            m_flags |= enum_NativeHResultRetVal;
+            goto Done;
+        }
 #endif
-                             );
 
-            if (IsFieldGetter())
+#ifndef _TARGET_X86_
+        if (msig.IsReturnTypeVoid())
+        {
+            // The method has a void return type on the native side.
+            m_flags |= enum_NativeVoidRetVal;
+            goto Done;
+        }
+#endif
+
+        BOOL WinRTType = pMT->IsProjectedFromWinRT();
+
+        // Look up the best fit mapping info via Assembly & Interface level attributes
+        BOOL BestFit = TRUE;
+        BOOL ThrowOnUnmappableChar = FALSE;
+
+        // Marshaling is fully described by the parameter type in WinRT. BestFit custom attributes 
+        // are not going to affect the marshaling behavior.
+        if (!WinRTType)
+        {
+            ReadBestFitCustomAttribute(pMD, &BestFit, &ThrowOnUnmappableChar);
+        }
+        
+        int numArgs = msig.NumFixedArgs();
+
+        // Collects ParamDef information in an indexed array where element 0 represents 
+        // the return type.
+        mdParamDef *params = (mdParamDef*)_alloca((numArgs+1) * sizeof(mdParamDef));
+        CollateParamTokens(pInternalImport, md, numArgs, params);
+
+#ifdef _TARGET_X86_
+        // If this is a method call then check to see if we need to do LCID conversion.
+        int iLCIDArg = GetLCIDParameterIndex(pMD);
+        if (iLCIDArg != -1)
+            iLCIDArg++;
+
+        nativeArgSize = sizeof(void*);
+
+        int iArg = 1;
+        CorElementType mtype;
+        while (ELEMENT_TYPE_END != (mtype = msig.NextArg()))
+        {
+            // Check to see if this is the parameter after which we need to read the LCID from.
+            if (iArg == iLCIDArg)
+                nativeArgSize += StackElemSize(sizeof(LCID));
+
+            MarshalInfo info(msig.GetModule(), msig.GetArgProps(), msig.GetSigTypeContext(), params[iArg],
+                                WinRTType ? MarshalInfo::MARSHAL_SCENARIO_WINRT : MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
+                                (CorNativeLinkType)0, (CorNativeLinkFlags)0,
+                                TRUE, iArg, numArgs, BestFit, ThrowOnUnmappableChar, FALSE, TRUE, pMD, FALSE
+#ifdef _DEBUG
+                                , szDebugName, szDebugClassName, iArg
+#endif
+                                );
+
+            if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_UNKNOWN)
             {
-                // getter takes 'this' and the output argument by-ref
-                nativeArgSize = sizeof(void *) + sizeof(void *);
+                nativeArgSize += StackElemSize(sizeof(LPVOID));
+                m_flags |= enum_HasMarshalError;
             }
             else
             {
                 info.SetupArgumentSizes();
 
-                // setter takes 'this' and the input argument by-value
-                nativeArgSize = sizeof(void *) + info.GetNativeArgSize();
+                nativeArgSize += info.GetNativeArgSize();
+
+                if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_HIDDENLENGTHARRAY)
+                {
+                    // count the hidden length
+                    nativeArgSize += info.GetHiddenLengthParamStackSize();
+                }
             }
+            
+            ++iArg;
+        }
+
+        // Check to see if this is the parameter after which we need to read the LCID from.
+        if (iArg == iLCIDArg)
+            nativeArgSize += StackElemSize(sizeof(LCID));
 #endif // _TARGET_X86_
 
-            // Field calls always return HRESULTs.
-            m_flags |= enum_NativeHResultRetVal;
-        }
-        else
-        {
-            MethodDesc *pMD = GetCallMethodDesc();
 
-#ifdef _DEBUG
-            LPCUTF8         szDebugName = pMD->m_pszDebugMethodName;
-            LPCUTF8         szDebugClassName = pMD->m_pszDebugClassName;
-
-            if (g_pConfig->ShouldBreakOnComToClrNativeInfoInit(szDebugName))
-                CONSISTENCY_CHECK_MSGF(false, ("BreakOnComToClrNativeInfoInit: '%s' ", szDebugName));
-#endif // _DEBUG
-
-            MethodTable * pMT = pMD->GetMethodTable();
-            IMDInternalImport * pInternalImport = pMT->GetMDImport();
-
-            mdMethodDef md = pMD->GetMemberDef();
-
-            ULONG ulCodeRVA;
-            DWORD dwImplFlags;
-            IfFailThrow(pInternalImport->GetMethodImplProps(md, &ulCodeRVA, &dwImplFlags));
-            
-            // Determine if we need to do HRESULT munging for this method.
-            BOOL fPreserveSig = IsMiPreserveSig(dwImplFlags);
+        //
+        // Return value
+        //
 
 #ifndef _TARGET_X86_
+        // Handled above
+        _ASSERTE(!msig.IsReturnTypeVoid());
+#else
+        if (msig.IsReturnTypeVoid())
+        {
             if (!fPreserveSig)
             {
                 // PreserveSig=false methods always return HRESULTs. 
                 m_flags |= enum_NativeHResultRetVal;
-                goto Done;
             }
-#endif
-
-            MetaSig msig(pMD);
-
-#ifndef _TARGET_X86_
-            if (msig.IsReturnTypeVoid())
+            else
             {
                 // The method has a void return type on the native side.
                 m_flags |= enum_NativeVoidRetVal;
-                goto Done;
-            }
-#endif
-
-            BOOL WinRTType = pMT->IsProjectedFromWinRT();
-
-            // Look up the best fit mapping info via Assembly & Interface level attributes
-            BOOL BestFit = TRUE;
-            BOOL ThrowOnUnmappableChar = FALSE;
-
-            // Marshaling is fully described by the parameter type in WinRT. BestFit custom attributes 
-            // are not going to affect the marshaling behavior.
-            if (!WinRTType)
-            {
-                ReadBestFitCustomAttribute(pMD, &BestFit, &ThrowOnUnmappableChar);
-            }
-         
-            int numArgs = msig.NumFixedArgs();
-
-            // Collects ParamDef information in an indexed array where element 0 represents 
-            // the return type.
-            mdParamDef *params = (mdParamDef*)_alloca((numArgs+1) * sizeof(mdParamDef));
-            CollateParamTokens(pInternalImport, md, numArgs, params);
-
-#ifdef _TARGET_X86_
-            // If this is a method call then check to see if we need to do LCID conversion.
-            int iLCIDArg = GetLCIDParameterIndex(pMD);
-            if (iLCIDArg != -1)
-                iLCIDArg++;
-
-            nativeArgSize = sizeof(void*);
-
-            int iArg = 1;
-            CorElementType mtype;
-            while (ELEMENT_TYPE_END != (mtype = msig.NextArg()))
-            {
-                // Check to see if this is the parameter after which we need to read the LCID from.
-                if (iArg == iLCIDArg)
-                    nativeArgSize += StackElemSize(sizeof(LCID));
-
-                MarshalInfo info(msig.GetModule(), msig.GetArgProps(), msig.GetSigTypeContext(), params[iArg],
-                                 WinRTType ? MarshalInfo::MARSHAL_SCENARIO_WINRT : MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
-                                 (CorNativeLinkType)0, (CorNativeLinkFlags)0,
-                                 TRUE, iArg, numArgs, BestFit, ThrowOnUnmappableChar, FALSE, TRUE, pMD, FALSE
-#ifdef _DEBUG
-                                 , szDebugName, szDebugClassName, iArg
-#endif
-                                 );
-
-                if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_UNKNOWN)
-                {
-                    nativeArgSize += StackElemSize(sizeof(LPVOID));
-                    m_flags |= enum_HasMarshalError;
-                }
-                else
-                {
-                    info.SetupArgumentSizes();
-
-                    nativeArgSize += info.GetNativeArgSize();
-
-                    if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_HIDDENLENGTHARRAY)
-                    {
-                        // count the hidden length
-                        nativeArgSize += info.GetHiddenLengthParamStackSize();
-                    }
-                }
-                
-                ++iArg;
             }
 
-            // Check to see if this is the parameter after which we need to read the LCID from.
-            if (iArg == iLCIDArg)
-                nativeArgSize += StackElemSize(sizeof(LCID));
+            goto Done;
+        }
 #endif // _TARGET_X86_
 
-
-            //
-            // Return value
-            //
+        {
+            MarshalInfo info(msig.GetModule(), msig.GetReturnProps(), msig.GetSigTypeContext(), params[0],
+                                WinRTType ? MarshalInfo::MARSHAL_SCENARIO_WINRT : MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
+                                (CorNativeLinkType)0, (CorNativeLinkFlags)0,
+                                FALSE, 0, numArgs, BestFit, ThrowOnUnmappableChar, FALSE, TRUE, pMD, FALSE
+#ifdef _DEBUG
+                            ,szDebugName, szDebugClassName, 0
+#endif
+            );
 
 #ifndef _TARGET_X86_
             // Handled above
-            _ASSERTE(!msig.IsReturnTypeVoid());
+            _ASSERTE(fPreserveSig);
 #else
-            if (msig.IsReturnTypeVoid())
+            if (!fPreserveSig)
             {
-                if (!fPreserveSig)
+                // PreserveSig=false methods always return HRESULTs. 
+                m_flags |= enum_NativeHResultRetVal;
+
+                // count the output by-ref argument
+                nativeArgSize += sizeof(void *);
+
+                if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_HIDDENLENGTHARRAY)
                 {
-                    // PreserveSig=false methods always return HRESULTs. 
-                    m_flags |= enum_NativeHResultRetVal;
-                }
-                else
-                {
-                    // The method has a void return type on the native side.
-                    m_flags |= enum_NativeVoidRetVal;
+                    // count the output hidden length
+                    nativeArgSize += info.GetHiddenLengthParamStackSize();
                 }
 
                 goto Done;
             }
 #endif // _TARGET_X86_
 
+            // Ignore the secret return buffer argument - we don't allow returning
+            // structures by value in COM interop.
+            if (info.IsFpuReturn())
             {
-                MarshalInfo info(msig.GetModule(), msig.GetReturnProps(), msig.GetSigTypeContext(), params[0],
-                                    WinRTType ? MarshalInfo::MARSHAL_SCENARIO_WINRT : MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
-                                    (CorNativeLinkType)0, (CorNativeLinkFlags)0,
-                                    FALSE, 0, numArgs, BestFit, ThrowOnUnmappableChar, FALSE, TRUE, pMD, FALSE
-#ifdef _DEBUG
-                                ,szDebugName, szDebugClassName, 0
-#endif
-                );
-
-#ifndef _TARGET_X86_
-                // Handled above
-                _ASSERTE(fPreserveSig);
-#else
-                if (!fPreserveSig)
+                if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_FLOAT)
                 {
-                    // PreserveSig=false methods always return HRESULTs. 
-                    m_flags |= enum_NativeHResultRetVal;
-
-                    // count the output by-ref argument
-                    nativeArgSize += sizeof(void *);
-
-                    if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_HIDDENLENGTHARRAY)
-                    {
-                        // count the output hidden length
-                        nativeArgSize += info.GetHiddenLengthParamStackSize();
-                    }
-
-                    goto Done;
-                }
-#endif // _TARGET_X86_
-
-                // Ignore the secret return buffer argument - we don't allow returning
-                // structures by value in COM interop.
-                if (info.IsFpuReturn())
-                {
-                    if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_FLOAT)
-                    {
-                        m_flags |= enum_NativeR4Retval;
-                    }
-                    else
-                    {
-                        _ASSERTE(info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_DOUBLE);
-                        m_flags |= enum_NativeR8Retval;
-                    }
+                    m_flags |= enum_NativeR4Retval;
                 }
                 else
                 {
-                    CorElementType returnType = msig.GetReturnType();
-                    if (returnType == ELEMENT_TYPE_I4 || returnType == ELEMENT_TYPE_U4)
-                    {        
-                        // If the method is PreserveSig=true and returns either an I4 or an U4, then we 
-                        // will assume the users wants to return an HRESULT in case of failure.
-                        m_flags |= enum_NativeHResultRetVal;
-                    }
-                    else if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_DATE)
-                    {
-                        // DateTime is returned as an OLEAUT DATE which is actually an R8.
-                        m_flags |= enum_NativeR8Retval;
-                    }
-                    else
-                    {
-                        // The method doesn't return an FP value nor should we treat it as returning
-                        // an HRESULT so we will return 0 in case of failure.
-                        m_flags |= enum_NativeBoolRetVal;
-                    }
+                    _ASSERTE(info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_DOUBLE);
+                    m_flags |= enum_NativeR8Retval;
+                }
+            }
+            else
+            {
+                CorElementType returnType = msig.GetReturnType();
+                if (returnType == ELEMENT_TYPE_I4 || returnType == ELEMENT_TYPE_U4)
+                {        
+                    // If the method is PreserveSig=true and returns either an I4 or an U4, then we 
+                    // will assume the users wants to return an HRESULT in case of failure.
+                    m_flags |= enum_NativeHResultRetVal;
+                }
+                else if (info.GetMarshalType() == MarshalInfo::MARSHAL_TYPE_DATE)
+                {
+                    // DateTime is returned as an OLEAUT DATE which is actually an R8.
+                    m_flags |= enum_NativeR8Retval;
+                }
+                else
+                {
+                    // The method doesn't return an FP value nor should we treat it as returning
+                    // an HRESULT so we will return 0 in case of failure.
+                    m_flags |= enum_NativeBoolRetVal;
                 }
             }
         }
-
 Done:
 
 #ifdef _TARGET_X86_
@@ -1401,47 +1170,31 @@ void ComCall::PopulateComCallMethodDesc(ComCallMethodDesc *pCMD, DWORD *pdwStubF
     BOOL BestFit               = TRUE;
     BOOL ThrowOnUnmappableChar = FALSE;
 
-    if (pCMD->IsFieldCall())
+    MethodDesc *pMD = pCMD->GetCallMethodDesc();
+    _ASSERTE(IsMethodVisibleFromCom(pMD) && "Calls are not permitted on this member since it isn't visible from COM. The only way you can have reached this code path is if your native interface doesn't match the managed interface.");
+
+    MethodTable *pMT = pMD->GetMethodTable();
+    if (pMT->IsProjectedFromWinRT() || pMT->IsExportedToWinRT() || pCMD->IsWinRTRedirectedMethod())
     {
-        if (pCMD->IsFieldGetter())
-            dwStubFlags |= NDIRECTSTUB_FL_FIELDGETTER;
+        dwStubFlags |= NDIRECTSTUB_FL_WINRT;
+
+        if (pMT->IsDelegate())
+            dwStubFlags |= NDIRECTSTUB_FL_WINRTDELEGATE;
+        else if (pCMD->IsWinRTCtor())
+        {
+            dwStubFlags |= NDIRECTSTUB_FL_WINRTCTOR;
+        }
         else
-            dwStubFlags |= NDIRECTSTUB_FL_FIELDSETTER;
-
-        FieldDesc *pFD = pCMD->GetFieldDesc();
-        _ASSERTE(IsMemberVisibleFromCom(pFD->GetApproxEnclosingMethodTable(), pFD->GetMemberDef(), mdTokenNil) && "Calls are not permitted on this member since it isn't visible from COM. The only way you can have reached this code path is if your native interface doesn't match the managed interface.");
-
-        MethodTable *pMT = pFD->GetEnclosingMethodTable();
-        ReadBestFitCustomAttribute(pMT->GetModule(), pMT->GetCl(), &BestFit, &ThrowOnUnmappableChar);
+        {
+            if (pCMD->IsWinRTStatic())
+                dwStubFlags |= NDIRECTSTUB_FL_WINRTSTATIC;
+        }
     }
     else
     {
-        MethodDesc *pMD = pCMD->GetCallMethodDesc();
-        _ASSERTE(IsMethodVisibleFromCom(pMD) && "Calls are not permitted on this member since it isn't visible from COM. The only way you can have reached this code path is if your native interface doesn't match the managed interface.");
-
-        MethodTable *pMT = pMD->GetMethodTable();
-        if (pMT->IsProjectedFromWinRT() || pMT->IsExportedToWinRT() || pCMD->IsWinRTRedirectedMethod())
-        {
-            dwStubFlags |= NDIRECTSTUB_FL_WINRT;
-
-            if (pMT->IsDelegate())
-                dwStubFlags |= NDIRECTSTUB_FL_WINRTDELEGATE;
-            else if (pCMD->IsWinRTCtor())
-            {
-                dwStubFlags |= NDIRECTSTUB_FL_WINRTCTOR;
-            }
-            else
-            {
-                if (pCMD->IsWinRTStatic())
-                    dwStubFlags |= NDIRECTSTUB_FL_WINRTSTATIC;
-            }
-        }
-        else
-        {
-            // Marshaling is fully described by the parameter type in WinRT. BestFit custom attributes 
-            // are not going to affect the marshaling behavior.
-            ReadBestFitCustomAttribute(pMD, &BestFit, &ThrowOnUnmappableChar);
-        }
+        // Marshaling is fully described by the parameter type in WinRT. BestFit custom attributes 
+        // are not going to affect the marshaling behavior.
+        ReadBestFitCustomAttribute(pMD, &BestFit, &ThrowOnUnmappableChar);
     }
 
     if (BestFit)
@@ -1464,7 +1217,7 @@ void ComCall::PopulateComCallMethodDesc(ComCallMethodDesc *pCMD, DWORD *pdwStubF
 //  Throws in case of error.
 //---------------------------------------------------------
 /*static*/ 
-Stub* ComCall::CreateGenericComCallStub(BOOL isFieldAccess)
+Stub* ComCall::CreateGenericComCallStub()
 {
     CONTRACT (Stub*)
     {
@@ -1514,7 +1267,7 @@ Stub* ComCall::CreateGenericComCallStub(BOOL isFieldAccess)
 
     psl->X86EmitPushReg(kESI);      // push frame as an ARG
     psl->X86EmitPushReg(kEBX);      // push ebx (push current thread as ARG)
-    LPVOID pTarget = isFieldAccess ? (LPVOID)FieldCallWorker : (LPVOID)COMToCLRWorker;
+    LPVOID pTarget = (LPVOID)COMToCLRWorker;
     psl->X86EmitCall(psl->NewExternalCodeLabel(pTarget), 8);
 
     // emit the epilog
@@ -1566,7 +1319,7 @@ PCODE ComCall::GetComCallMethodStub(ComCallMethodDesc *pCMD)
 #ifdef _TARGET_X86_
     // Finally, we need to build a stub that represents the entire call.  This
     // is always generic.
-    RETURN (pCMD->IsFieldCall() ? g_pGenericComCallStubFields : g_pGenericComCallStub);
+    RETURN g_pGenericComCallStub;
 #else
     RETURN GetEEFuncEntryPoint(GenericComCallStub);
 #endif
@@ -1593,34 +1346,6 @@ MethodDesc* ComCall::GetILStubMethodDesc(MethodDesc *pCallMD, DWORD dwStubFlags)
                                             (CorNativeLinkFlags)0,
                                             (CorPinvokeMap)0,
                                             dwStubFlags);
-}
-
-// Called at run-time - generates field access stub. We don't currently NGEN field access stubs
-// as the scenario is too rare to justify the extra NGEN logic. The workaround is trivial - make
-// the field non-public and add a public property to access it.
-/*static*/
-MethodDesc* ComCall::GetILStubMethodDesc(FieldDesc *pFD, DWORD dwStubFlags)
-{
-    CONTRACTL
-    {
-        STANDARD_VM_CHECK;
-        PRECONDITION(CheckPointer(pFD));
-        PRECONDITION(SF_IsFieldGetterStub(dwStubFlags) || SF_IsFieldSetterStub(dwStubFlags));
-    }
-    CONTRACTL_END;
-
-    PCCOR_SIGNATURE pSig;
-    DWORD           cSig;
-
-    // Get the field signature information
-    pFD->GetSig(&pSig, &cSig);
-
-    return NDirect::CreateFieldAccessILStub(pSig,
-                                            cSig,
-                                            pFD->GetModule(),
-                                            pFD->GetMemberDef(),
-                                            dwStubFlags,
-                                            pFD);
 }
 
 // static

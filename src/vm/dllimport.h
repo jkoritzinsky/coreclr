@@ -89,16 +89,6 @@ public:
                     CorNativeLinkFlags nlFlags,
                     CorPinvokeMap      unmgdCallConv,
                     DWORD              dwStubFlags); // NDirectStubFlags
-                    
-#ifdef FEATURE_COMINTEROP
-    static MethodDesc* CreateFieldAccessILStub(
-                    PCCOR_SIGNATURE    szMetaSig,
-                    DWORD              cbMetaSigSize,
-                    Module*            pModule,
-                    mdFieldDef         fd,
-                    DWORD              dwStubFlags, // NDirectStubFlags
-                    FieldDesc*         pFD);
-#endif // FEATURE_COMINTEROP
 
     static MethodDesc* CreateCLRToNativeILStub(PInvokeStaticSigInfo* pSigInfo,
                              DWORD dwStubFlags,
@@ -146,9 +136,9 @@ enum NDirectStubFlags
     // unused                               = 0x00000400,
     NDIRECTSTUB_FL_UNMANAGED_CALLI          = 0x00000800,
     NDIRECTSTUB_FL_TRIGGERCCTOR             = 0x00001000,
+    // unused                               = 0x00002000,
+    // unused                               = 0x00004000,
 #ifdef FEATURE_COMINTEROP
-    NDIRECTSTUB_FL_FIELDGETTER              = 0x00002000, // COM->CLR field getter
-    NDIRECTSTUB_FL_FIELDSETTER              = 0x00004000, // COM->CLR field setter
     NDIRECTSTUB_FL_WINRT                    = 0x00008000,
     NDIRECTSTUB_FL_WINRTDELEGATE            = 0x00010000,
     NDIRECTSTUB_FL_WINRTSHAREDGENERIC       = 0x00020000, // stub for methods on shared generic interfaces (only used in the forward direction)
@@ -229,8 +219,6 @@ inline bool SF_IsCOMStub               (DWORD dwStubFlags) { LIMITED_METHOD_CONT
 inline bool SF_IsWinRTStub             (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_WINRT)); }
 inline bool SF_IsCOMLateBoundStub      (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_COMLATEBOUND)); }
 inline bool SF_IsCOMEventCallStub      (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_COMEVENTCALL)); }
-inline bool SF_IsFieldGetterStub       (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_FIELDGETTER)); }
-inline bool SF_IsFieldSetterStub       (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_FIELDSETTER)); }
 inline bool SF_IsWinRTDelegateStub     (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_WINRTDELEGATE)); }
 inline bool SF_IsWinRTCtorStub         (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_WINRTCTOR)); }
 inline bool SF_IsWinRTCompositionStub  (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return COM_ONLY(dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_WINRTCOMPOSITION)); }
@@ -247,8 +235,8 @@ inline bool SF_IsSharedStub(DWORD dwStubFlags)
         // tail-call to a target-specific mscorlib routine is burned into the stub
         return false;
     }
-
-    return !SF_IsFieldGetterStub(dwStubFlags) && !SF_IsFieldSetterStub(dwStubFlags);
+    
+    return true;
 }
 
 inline bool SF_IsForwardStub             (DWORD dwStubFlags) { WRAPPER_NO_CONTRACT; return !SF_IsReverseStub(dwStubFlags); }
@@ -271,14 +259,6 @@ inline void SF_ConsistencyCheck(DWORD dwStubFlags)
     // Late bound and event calls imply COM
     CONSISTENCY_CHECK(!(SF_IsCOMLateBoundStub(dwStubFlags) && !SF_IsCOMStub(dwStubFlags)));
     CONSISTENCY_CHECK(!(SF_IsCOMEventCallStub(dwStubFlags) && !SF_IsCOMStub(dwStubFlags)));
-
-    // Field accessors imply reverse COM
-    CONSISTENCY_CHECK(!(SF_IsFieldGetterStub(dwStubFlags) && !SF_IsReverseCOMStub(dwStubFlags)));
-    CONSISTENCY_CHECK(!(SF_IsFieldSetterStub(dwStubFlags) && !SF_IsReverseCOMStub(dwStubFlags)));
-
-    // Field accessors are always HRESULT swapping
-    CONSISTENCY_CHECK(!(SF_IsFieldGetterStub(dwStubFlags) && !SF_IsHRESULTSwapping(dwStubFlags)));
-    CONSISTENCY_CHECK(!(SF_IsFieldSetterStub(dwStubFlags) && !SF_IsHRESULTSwapping(dwStubFlags)));
 
     // Delegate stubs are not COM
     CONSISTENCY_CHECK(!(SF_IsDelegateStub(dwStubFlags) && SF_IsCOMStub(dwStubFlags)));

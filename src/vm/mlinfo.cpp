@@ -3284,7 +3284,6 @@ void MarshalInfo::GenerateArgumentIL(NDirectStubLinker* psl,
 void MarshalInfo::GenerateReturnIL(NDirectStubLinker* psl,
                                    int argOffset,
                                    BOOL fMngToNative,
-                                   BOOL fieldGetter,
                                    BOOL retval)
 {
     CONTRACTL
@@ -3319,7 +3318,7 @@ void MarshalInfo::GenerateReturnIL(NDirectStubLinker* psl,
     if (amostat == HANDLEASNORMAL)
     {
         // Historically we have always allowed reading fields that are marshaled as C arrays.
-        if (m_type == MARSHAL_TYPE_UNKNOWN || (!fieldGetter && m_type == MARSHAL_TYPE_NATIVEARRAY))
+        if (m_type == MARSHAL_TYPE_UNKNOWN || m_type == MARSHAL_TYPE_NATIVEARRAY)
         {
             EmitOrThrowInteropParamException(psl, fMngToNative, m_resID, 0);
             return;

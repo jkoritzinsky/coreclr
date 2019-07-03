@@ -475,7 +475,7 @@ extern "C" PCODE ComPreStubWorker(ComPrestubMethodFrame *pPFrame, UINT64 *pError
 
                 // Make sure we're not trying to call on the class interface of a class with ComVisible(false) members
                 //  in its hierarchy.
-                if ((pCMD->IsFieldCall()) || (NULL == pCMD->GetInterfaceMethodDesc() && !pCMD->GetMethodDesc()->IsInterface()))
+                if (NULL == pCMD->GetInterfaceMethodDesc() && !pCMD->GetMethodDesc()->IsInterface())
                 {
                     // If we have a fieldcall or a null interface MD, we could be dealing with the IClassX interface.
                     ComMethodTable* pComMT = ComMethodTable::ComMethodTableFromIP(pUnk);
@@ -489,30 +489,27 @@ extern "C" PCODE ComPreStubWorker(ComPrestubMethodFrame *pPFrame, UINT64 *pError
 
                     GCPROTECT_BEGIN(pADThrowable);
                     {
-                        if (pCMD->IsMethodCall())
+                        // We need to ensure all valuetypes are loaded in
+                        //  the target domain so that GC can happen later
+
+                        EX_TRY
                         {
-                            // We need to ensure all valuetypes are loaded in
-                            //  the target domain so that GC can happen later
+                            MethodDesc* pTargetMD = pCMD->GetMethodDesc();
+                            MetaSig::EnsureSigValueTypesLoaded(pTargetMD);
 
-                            EX_TRY
+                            if (pCMD->IsWinRTCtor() || pCMD->IsWinRTStatic() || pCMD->IsWinRTRedirectedMethod())
                             {
-                                MethodDesc* pTargetMD = pCMD->GetMethodDesc();
-                                MetaSig::EnsureSigValueTypesLoaded(pTargetMD);
-
-                                if (pCMD->IsWinRTCtor() || pCMD->IsWinRTStatic() || pCMD->IsWinRTRedirectedMethod())
-                                {
-                                    // Activation, static method invocation, and call through a redirected interface may be the first
-                                    // managed code that runs in the module. Fully load it here so we don't have to call EnsureInstanceActive
-                                    // on every activation/static call.
-                                    pTargetMD->GetMethodTable()->EnsureInstanceActive();
-                                }
+                                // Activation, static method invocation, and call through a redirected interface may be the first
+                                // managed code that runs in the module. Fully load it here so we don't have to call EnsureInstanceActive
+                                // on every activation/static call.
+                                pTargetMD->GetMethodTable()->EnsureInstanceActive();
                             }
-                            EX_CATCH
-                            {
-                                pADThrowable = GET_THROWABLE();
-                            }
-                            EX_END_CATCH(RethrowTerminalExceptions);
                         }
+                        EX_CATCH
+                        {
+                            pADThrowable = GET_THROWABLE();
+                        }
+                        EX_END_CATCH(RethrowTerminalExceptions);
 
                         if (pADThrowable != NULL)
                         {
@@ -3910,7 +3907,7 @@ void ComMethodTable::Cleanup()
             }
             
             // All the stubs that are in a COM->COM+ VTable are to the generic
-            // helpers (g_pGenericComCallStubFields, etc.).  So all we do is
+            // helpers (g_pGenericComCallStub, etc.).  So all we do is
             // discard the resources held by the ComMethodDesc.
             pCMD->Destruct();
         }
@@ -4212,46 +4209,6 @@ void ComMethodTable::LayOutClassMethodTable()
 
                         pMethodDescMemory += (COMMETHOD_PREPAD + sizeof(ComCallMethodDesc));
                     }
-                }
-            }
-    
-    
-            //
-            // Set up the COM call method desc's for the public fields defined in the current class.
-            //
-    
-            // <TODO>check this approximation - we may be losing exact type information </TODO>
-            ApproxFieldDescIterator fdIterator(pCurrMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
-            FieldDesc* pFD = NULL;
-            while ((pFD = fdIterator.Next()) != NULL)
-            {
-                if (IsMemberVisibleFromCom(pCurrMT, pFD->GetMemberDef(), mdTokenNil)) // if it is a public field grab it
-                {
-                    // set up a getter method
-                    // some bytes are reserved for CALL xxx before the method desc
-                    ComCallMethodDesc* pNewMD = (ComCallMethodDesc *) (pMethodDescMemory + COMMETHOD_PREPAD);
-                    NewCOMMethodDescs.Append(pNewMD);
-
-                    pNewMD->InitField(pFD, TRUE);
-
-                    emitCOMStubCall(pNewMD, GetEEFuncEntryPoint(ComCallPreStub));
-    
-                    FillInComVtableSlot(pComVtable, cbPrevSlots++, pNewMD);
-    
-                    pMethodDescMemory+= (COMMETHOD_PREPAD + sizeof(ComCallMethodDesc));
-    
-                    // setup a setter method
-                    // some bytes are reserved for CALL xxx before the method desc
-                    pNewMD = (ComCallMethodDesc *) (pMethodDescMemory + COMMETHOD_PREPAD);
-                    NewCOMMethodDescs.Append(pNewMD);
-
-                    pNewMD->InitField(pFD, FALSE);
-
-                    emitCOMStubCall(pNewMD, GetEEFuncEntryPoint(ComCallPreStub));
-    
-                    FillInComVtableSlot(pComVtable, cbPrevSlots++, pNewMD);
-    
-                    pMethodDescMemory+= (COMMETHOD_PREPAD + sizeof(ComCallMethodDesc));
                 }
             }
         }
@@ -6344,12 +6301,12 @@ Module* ComCallMethodDesc::GetModule()
         NOTHROW;
         GC_NOTRIGGER;
         MODE_ANY;
-        PRECONDITION( IsFieldCall() ? (m_pFD != NULL) : (m_pMD != NULL) );
+        PRECONDITION(m_pMD != NULL);
         POSTCONDITION(CheckPointer(RETVAL));
     }
     CONTRACT_END;
     
-    MethodTable* pClass = (IsFieldCall()) ? m_pFD->GetEnclosingMethodTable() : m_pMD->GetMethodTable();
+    MethodTable* pClass = m_pMD->GetMethodTable();
     _ASSERTE(pClass != NULL);
 
     RETURN pClass->GetModule();

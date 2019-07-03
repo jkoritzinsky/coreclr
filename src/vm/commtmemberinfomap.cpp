@@ -292,13 +292,9 @@ void ComMTMemberInfoMap::SetupPropsForIClassX(size_t sizeOfPtr)
 
     ComMethodTable *pCMT;               // ComMethodTable for the Class Vtable.
     MethodDesc  *pMeth;                 // A method descriptor.
-    ComCallMethodDesc *pFieldMeth;      // A method descriptor for a field.
-    FieldDesc   *pField;                // Actual FieldDesc for field.
     DWORD       nSlots;                 // Number of vtable slots.
     UINT        i;                      // Loop control.
-    LPCUTF8     pszName;                // A name in UTF8.
     CQuickArray<WCHAR> rName;           // A name.
-    ULONG       dispid;                 // A dispid.
     SHORT       oVftBase;                 // Offset in vtable, if not system defined.
     int                 cVisibleMembers = 0;    // The count of methods that are visible to COM.
     HRESULT             hr              = S_OK; // A result.
@@ -315,68 +311,23 @@ void ComMTMemberInfoMap::SetupPropsForIClassX(size_t sizeOfPtr)
     m_MethodProps.ReSizeThrows(nSlots);
     for (i=0; i<nSlots; ++i)
     {
-        if (pCMT->IsSlotAField(i))
+        // Retrieve the method desc on the current class. This involves looking up the method
+        // desc in the vtable if it is a virtual method.
+        pMeth = pCMT->GetMethodDescForSlot(i);
+        if (pMeth->IsVirtual())
         {
-            // Fields better come in pairs.
-            _ASSERTE(i < nSlots-1);
-
-            pFieldMeth = pCMT->GetFieldCallMethodDescForSlot(i);
-            pField = pFieldMeth->GetFieldDesc();
-
-            DWORD dwFlags;
-            IfFailThrow(pField->GetMDImport()->GetFieldDefProps(pField->GetMemberDef(), &dwFlags));
-            BOOL bReadOnly = IsFdInitOnly(dwFlags) || IsFdLiteral(dwFlags);
-            BOOL bFieldVisibleFromCom = IsMemberVisibleFromCom(pField->GetApproxEnclosingMethodTable(), pField->GetMemberDef(), mdTokenNil);
-
-            // Get the assigned dispid, or DISPID_UNKNOWN.
-            hr = pField->GetMDImport()->GetDispIdOfMemberDef(pField->GetMemberDef(), &dispid);
-
-            IfFailThrow(pField->GetMDImport()->GetNameOfFieldDef(pField->GetMemberDef(), &pszName));
-            IfFailThrow(Utf2Quick(pszName, rName));
-            ULONG cchpName = ((int)wcslen(rName.Ptr())) + 1;
-            m_MethodProps[i].pName = reinterpret_cast<WCHAR*>(m_sNames.Alloc(cchpName * sizeof(WCHAR)));
-
-            m_MethodProps[i].pMeth = (MethodDesc*)pFieldMeth;
-            // It's safe to do the following case becasue that FieldSemanticOffset is 100, msSetter = 1, msGetter = 2
-            m_MethodProps[i].semantic = static_cast<USHORT>(FieldSemanticOffset + (pFieldMeth->IsFieldGetter() ? msGetter : msSetter));
-            m_MethodProps[i].property = mdPropertyNil;
-            wcscpy_s(m_MethodProps[i].pName, cchpName, rName.Ptr());          
-            m_MethodProps[i].dispid = dispid;
-            m_MethodProps[i].oVft = 0;
-            m_MethodProps[i].bMemberVisible = bFieldVisibleFromCom && (!bReadOnly || pFieldMeth->IsFieldGetter());
-            m_MethodProps[i].bFunction2Getter = FALSE;
-
-            ++i;
-            pFieldMeth = pCMT->GetFieldCallMethodDescForSlot(i);
-            m_MethodProps[i].pMeth = (MethodDesc*)pFieldMeth;
-            // It's safe to do the following case becasue that FieldSemanticOffset is 100, msSetter = 1, msGetter = 2
-            m_MethodProps[i].semantic = static_cast<USHORT>(FieldSemanticOffset + (pFieldMeth->IsFieldGetter() ? msGetter : msSetter));
-            m_MethodProps[i].property = i - 1;
-            m_MethodProps[i].dispid = dispid;
-            m_MethodProps[i].oVft = 0;
-            m_MethodProps[i].bMemberVisible = bFieldVisibleFromCom && (!bReadOnly || pFieldMeth->IsFieldGetter());
-            m_MethodProps[i].bFunction2Getter = FALSE;
+            WORD wSlot = InteropMethodTableData::GetSlotForMethodDesc(m_pMT, pMeth);
+            _ASSERTE(wSlot != MethodTable::NO_SLOT);
+            pMeth = m_pMT->GetComInteropData()->pVTable[wSlot].pMD;
         }
-        else
-        {
-            // Retrieve the method desc on the current class. This involves looking up the method
-            // desc in the vtable if it is a virtual method.
-            pMeth = pCMT->GetMethodDescForSlot(i);
-            if (pMeth->IsVirtual())
-            {
-                WORD wSlot = InteropMethodTableData::GetSlotForMethodDesc(m_pMT, pMeth);
-                _ASSERTE(wSlot != MethodTable::NO_SLOT);
-                pMeth = m_pMT->GetComInteropData()->pVTable[wSlot].pMD;
-            }
-            m_MethodProps[i].pMeth = pMeth;
+        m_MethodProps[i].pMeth = pMeth;
 
-            // Retrieve the properties of the method.
-            GetMethodPropsForMeth(pMeth, i, m_MethodProps, m_sNames);
+        // Retrieve the properties of the method.
+        GetMethodPropsForMeth(pMeth, i, m_MethodProps, m_sNames);
 
-            // Turn off dispids that look system-assigned.
-            if (m_MethodProps[i].dispid >= 0x40000000 && m_MethodProps[i].dispid <= 0x7fffffff)
-                m_MethodProps[i].dispid = DISPID_UNKNOWN;
-        }
+        // Turn off dispids that look system-assigned.
+        if (m_MethodProps[i].dispid >= 0x40000000 && m_MethodProps[i].dispid <= 0x7fffffff)
+            m_MethodProps[i].dispid = DISPID_UNKNOWN;
     }
 
     // COM+ supports properties in which the getter and setter have different signatures,
@@ -384,8 +335,7 @@ void ComMTMemberInfoMap::SetupPropsForIClassX(size_t sizeOfPtr)
     for (i=0; i<nSlots; ++i)
     {
         // Is it a property, but not a field?  Fields only have one signature, so they are always OK.
-        if (TypeFromToken(m_MethodProps[i].property) != mdtProperty &&
-            m_MethodProps[i].semantic < FieldSemanticOffset)
+        if (TypeFromToken(m_MethodProps[i].property) != mdtProperty)
         {
             // Get the indices of the getter and setter.
             size_t ixSet, ixGet;
@@ -1176,19 +1126,15 @@ void ComMTMemberInfoMap::AssignDefaultMember(
         //  a property get function is OK if it takes 0 params; a put is OK with 1.
         if (pDef)
         {   
-            // Fields are by definition simple enough, so only check if some sort of func.
-            if (rProps[ix].semantic < FieldSemanticOffset)
-            {
-                // Get the signature, skip the calling convention, get the param count.
-                rProps[ix].pMeth->GetSig(&pbSig, &cbSig);
-                ixSig = CorSigUncompressData(pbSig, &callconv);
-                _ASSERTE(callconv != IMAGE_CEE_CS_CALLCONV_FIELD);
-                ixSig += CorSigUncompressData(&pbSig[ixSig], &cParams);
+            // Get the signature, skip the calling convention, get the param count.
+            rProps[ix].pMeth->GetSig(&pbSig, &cbSig);
+            ixSig = CorSigUncompressData(pbSig, &callconv);
+            _ASSERTE(callconv != IMAGE_CEE_CS_CALLCONV_FIELD);
+            ixSig += CorSigUncompressData(&pbSig[ixSig], &cParams);
 
-                // If too many params, don't consider this one any more.
-                if (cParams > 1 || (cParams == 1 && rProps[ix].semantic != msSetter))
-                    pDef = 0;
-            }
+            // If too many params, don't consider this one any more.
+            if (cParams > 1 || (cParams == 1 && rProps[ix].semantic != msSetter))
+                pDef = 0;
             // If we made it through the above checks, save the index of this member.
             if (pDef)
                 *pDef = ix, pDef = 0;
@@ -1538,17 +1484,7 @@ void ComMTMemberInfoMap::AssignDefaultDispIds()
 
         if (pProps->dispid == DISPID_UNKNOWN)
         {
-            if (pProps->semantic > FieldSemanticOffset)
-            {
-                // We are dealing with a field.
-                pProps->dispid = BASE_OLEAUT_DISPID + i;
-                m_MethodProps[i + 1].dispid = BASE_OLEAUT_DISPID + i;
-
-                // Skip the next method since field methods always come in pairs.
-                _ASSERTE(i + 1 < nSlots && m_MethodProps[i + 1].property == i);
-                i++;
-            }
-            else if (pProps->property == mdPropertyNil)
+            if (pProps->property == mdPropertyNil)
             {
                 // Make sure that this is either a real method or a method transformed into a getter.
                 _ASSERTE(pProps->semantic == 0 || pProps->semantic == msGetter);
@@ -1594,21 +1530,7 @@ void ComMTMemberInfoMap::PopulateMemberHashtable()
         // Retrieve the properties for the current member.
         ComMTMethodProps *pProps = &m_MethodProps[i];
 
-        if (pProps->semantic > FieldSemanticOffset)
-        {
-            // We are dealing with a field.
-            ComCallMethodDesc *pFieldMeth = reinterpret_cast<ComCallMethodDesc*>(pProps->pMeth);
-            FieldDesc *pFD = pFieldMeth->GetFieldDesc();
-
-            // Insert the member into the hashtable.
-            EEModuleTokenPair Key(pFD->GetMemberDef(), pFD->GetModule());
-            m_TokenToComMTMethodPropsMap.InsertValue(&Key, (HashDatum)pProps);
-
-            // Skip the next method since field methods always come in pairs.
-            _ASSERTE(i + 1 < nSlots && m_MethodProps[i + 1].property == i);
-            i++;
-        }
-        else if (pProps->property == mdPropertyNil)
+        if (pProps->property == mdPropertyNil)
         {
             // Make sure that this is either a real method or a method transformed into a getter.
             _ASSERTE(pProps->semantic == 0 || pProps->semantic == msGetter);

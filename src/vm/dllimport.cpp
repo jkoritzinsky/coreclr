@@ -246,7 +246,6 @@ public:
 
         pInfo->GenerateReturnIL(&m_slIL, argOffset,
                                 SF_IsForwardStub(m_dwStubFlags),
-                                SF_IsFieldGetterStub(m_dwStubFlags),
                                 SF_IsHRESULTSwapping(m_dwStubFlags));
     }
 
@@ -736,9 +735,7 @@ public:
 
         LocalDesc nativeReturnType;
         LocalDesc managedReturnType;
-        bool hasTryCatchForHRESULT = SF_IsReverseCOMStub(m_dwStubFlags) 
-                                    && !SF_IsFieldGetterStub(m_dwStubFlags) 
-                                    && !SF_IsFieldSetterStub(m_dwStubFlags);
+        bool hasTryCatchForHRESULT = SF_IsReverseCOMStub(m_dwStubFlags);
 
 #ifdef FEATURE_COMINTEROP
         if (hasTryCatchForHRESULT)
@@ -917,10 +914,6 @@ public:
             // tell the JIT to bother with it.
             m_slIL.ClearCode();
             m_slIL.GenerateInteropParamException(pcsMarshal);
-        }
-        else if (SF_IsFieldGetterStub(m_dwStubFlags) || SF_IsFieldSetterStub(m_dwStubFlags))
-        {
-            // Field access stubs are not shared and do not use the secret parameter.
         }
 #ifndef _WIN64
         else if (SF_IsForwardDelegateStub(m_dwStubFlags) ||
@@ -1244,8 +1237,6 @@ public:
         LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_UNMANAGED_CALLI,         "   NDIRECTSTUB_FL_UNMANAGED_CALLI\n", facility, level);
         LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_TRIGGERCCTOR,            "   NDIRECTSTUB_FL_TRIGGERCCTOR\n", facility, level);
 #ifdef FEATURE_COMINTEROP
-        LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_FIELDGETTER,             "   NDIRECTSTUB_FL_FIELDGETTER\n", facility, level);
-        LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_FIELDSETTER,             "   NDIRECTSTUB_FL_FIELDSETTER\n", facility, level);
         LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_WINRT,                   "   NDIRECTSTUB_FL_WINRT\n", facility, level);
         LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_WINRTDELEGATE,           "   NDIRECTSTUB_FL_WINRTDELEGATE\n", facility, level);
         LogOneFlag(dwStubFlags, NDIRECTSTUB_FL_WINRTSHAREDGENERIC,      "   NDIRECTSTUB_FL_WINRTSHAREDGENERIC\n", facility, level);
@@ -1277,8 +1268,6 @@ public:
             NDIRECTSTUB_FL_COM                      |
             NDIRECTSTUB_FL_COMLATEBOUND             |   // internal
             NDIRECTSTUB_FL_COMEVENTCALL             |   // internal
-            NDIRECTSTUB_FL_FIELDGETTER              |
-            NDIRECTSTUB_FL_FIELDSETTER              |
             NDIRECTSTUB_FL_WINRT                    |
             NDIRECTSTUB_FL_WINRTDELEGATE            |
             NDIRECTSTUB_FL_WINRTCTOR                |
@@ -1598,47 +1587,6 @@ public:
         pcsExCleanup->EmitSTIND_I();
 
     }
-};
-
-class COMToCLRFieldAccess_ILStubState : public COMToCLR_ILStubState
-{
-public:
-
-    COMToCLRFieldAccess_ILStubState(Module* pStubModule, const Signature &signature, SigTypeContext *pTypeContext,
-                                    DWORD dwStubFlags, FieldDesc* pFD)
-        : COMToCLR_ILStubState(
-                pStubModule,
-                signature,
-                pTypeContext,
-                dwStubFlags,
-                -1,
-                NULL)
-    {
-        STANDARD_VM_CONTRACT;
-
-        _ASSERTE(pFD != NULL);
-        m_pFD = pFD;
-    }
-
-    void EmitInvokeTarget(MethodDesc *pStubMD)
-    {
-        STANDARD_VM_CONTRACT;
-
-        ILCodeStream* pcsDispatch = m_slIL.GetDispatchCodeStream();
-
-        if (SF_IsFieldGetterStub(m_dwStubFlags))
-        {
-            pcsDispatch->EmitLDFLD(pcsDispatch->GetToken(m_pFD));
-        }
-        else
-        {
-            CONSISTENCY_CHECK(SF_IsFieldSetterStub(m_dwStubFlags));
-            pcsDispatch->EmitSTFLD(pcsDispatch->GetToken(m_pFD));
-        }
-    }
-
-protected:
-    FieldDesc *m_pFD;
 };
 #endif // FEATURE_COMINTEROP
 
@@ -2158,9 +2106,7 @@ void NDirectStubLinker::End(DWORD dwStubFlags)
 
     ILCodeStream* pcs = m_pcsUnmarshal;
 
-    bool hasTryCatchForHRESULT = SF_IsReverseCOMStub(dwStubFlags) 
-                                    && !SF_IsFieldGetterStub(dwStubFlags) 
-                                    && !SF_IsFieldSetterStub(dwStubFlags);
+    bool hasTryCatchForHRESULT = SF_IsReverseCOMStub(dwStubFlags);
 
     //
     // Create a local for the return value and store the return value in it.
@@ -2563,7 +2509,6 @@ void NDirectStubLinker::EmitLoadStubContext(ILCodeStream* pcsEmit, DWORD dwStubF
     STANDARD_VM_CONTRACT;
 
     CONSISTENCY_CHECK(!SF_IsForwardDelegateStub(dwStubFlags));
-    CONSISTENCY_CHECK(!SF_IsFieldGetterStub(dwStubFlags) && !SF_IsFieldSetterStub(dwStubFlags));
 
 #ifdef FEATURE_COMINTEROP
     if (SF_IsWinRTDelegateStub(dwStubFlags) && SF_IsForwardStub(dwStubFlags))
@@ -5211,81 +5156,6 @@ MethodDesc* NDirect::CreateCLRToNativeILStub(
 
     RETURN pStubMD;
 }
-
-#ifdef FEATURE_COMINTEROP
-MethodDesc* NDirect::CreateFieldAccessILStub(
-                PCCOR_SIGNATURE    szMetaSig,
-                DWORD              cbMetaSigSize,
-                Module*            pModule,
-                mdFieldDef         fd,
-                DWORD              dwStubFlags, // NDirectStubFlags
-                FieldDesc*         pFD)
-{
-    CONTRACT(MethodDesc*)
-    {
-        STANDARD_VM_CHECK;
-
-        PRECONDITION(CheckPointer(szMetaSig));
-        PRECONDITION(CheckPointer(pModule));
-        PRECONDITION(CheckPointer(pFD, NULL_OK));
-        PRECONDITION(SF_IsFieldGetterStub(dwStubFlags) || SF_IsFieldSetterStub(dwStubFlags));
-        POSTCONDITION(CheckPointer(RETVAL));
-    }
-    CONTRACT_END;
-
-    int numArgs = (SF_IsFieldSetterStub(dwStubFlags) ? 1 : 0);
-    int numParamTokens = numArgs + 1;
-
-    // make sure we capture marshaling metadata
-    mdParamDef* pParamTokenArray = (mdParamDef *)_alloca(numParamTokens * sizeof(mdParamDef));
-    pParamTokenArray[0] = mdParamDefNil;
-    pParamTokenArray[numArgs] = (mdParamDef)fd;
-
-    // fields are never preserve-sig
-    dwStubFlags |= NDIRECTSTUB_FL_DOHRESULTSWAPPING;
-
-    // convert field signature to getter/setter signature
-    SigBuilder sigBuilder;
-
-    sigBuilder.AppendData(IMAGE_CEE_CS_CALLCONV_DEFAULT | IMAGE_CEE_CS_CALLCONV_HASTHIS);
-    sigBuilder.AppendData(numArgs);
-
-    if (SF_IsFieldSetterStub(dwStubFlags))
-    {
-        // managed setter returns void
-        sigBuilder.AppendElementType(ELEMENT_TYPE_VOID);
-    }
-
-    CONSISTENCY_CHECK(*szMetaSig == IMAGE_CEE_CS_CALLCONV_FIELD);
-
-    sigBuilder.AppendBlob((const PVOID)(szMetaSig + 1), cbMetaSigSize - 1);
-    szMetaSig = (PCCOR_SIGNATURE)sigBuilder.GetSignature(&cbMetaSigSize);
-
-    StubSigDesc sigDesc(NULL, Signature(szMetaSig, cbMetaSigSize), pModule);
-
-#ifdef _DEBUG
-    sigDesc.m_pDebugName = pFD->GetDebugName();
-    sigDesc.m_pDebugClassName = pFD->GetEnclosingMethodTable()->GetDebugClassName();
-#endif // _DEBUG
-
-    Signature signature(szMetaSig, cbMetaSigSize);
-    NewHolder<ILStubState> pStubState = new COMToCLRFieldAccess_ILStubState(pModule, signature, &sigDesc.m_typeContext, dwStubFlags, pFD);
-
-    MethodDesc* pStubMD;
-    pStubMD = CreateInteropILStub(
-                pStubState,
-                &sigDesc,
-                (CorNativeLinkType)0,
-                (CorNativeLinkFlags)0,
-                (CorPinvokeMap)0,
-                dwStubFlags,
-                numParamTokens,
-                pParamTokenArray,
-                -1);
-
-    RETURN pStubMD;
-}
-#endif // FEATURE_COMINTEROP
 
 MethodDesc* NDirect::CreateCLRToNativeILStub(PInvokeStaticSigInfo* pSigInfo,
                          DWORD dwStubFlags,

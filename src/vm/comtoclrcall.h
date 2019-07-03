@@ -21,8 +21,8 @@
 enum ComCallFlags
 {
     enum_IsVirtual                  = 0x0001,   // If true the method is virtual on the managed side
-    enum_IsFieldCall                = 0x0002,   // is field call
-    enum_IsGetter                   = 0x0004,   // is field call getter
+    // unused                       = 0x0002,
+    // unused                       = 0x0004,
     enum_NativeInfoInitialized      = 0x0008,   // Has the native info been initialized
     enum_NativeR4Retval             = 0x0010,   // Native ret val is an R4
     enum_NativeR8Retval             = 0x0020,   // Native ret val is an R8
@@ -70,7 +70,7 @@ public:
     static void PopulateComCallMethodDesc(ComCallMethodDesc *pCMD, DWORD *pdwStubFlags);
 
     // helper to create a generic stub for com calls
-    static Stub* CreateGenericComCallStub(BOOL isFieldAccess);
+    static Stub* CreateGenericComCallStub();
 
     //---------------------------------------------------------
     // Either creates or retrieves from the cache, a stub to
@@ -109,37 +109,6 @@ public:
     // init method
     void InitMethod(MethodDesc *pMD, MethodDesc *pInterfaceMD, BOOL fRedirectedInterface = FALSE);
 
-    // init field
-    void InitField(FieldDesc* pField, BOOL isGetter);
-
-    // is field call
-    BOOL IsFieldCall()
-    {
-        LIMITED_METHOD_CONTRACT;
-        return (m_flags & enum_IsFieldCall);
-    }
-
-    BOOL IsMethodCall()
-    {
-        WRAPPER_NO_CONTRACT;
-        return !IsFieldCall();
-    }
-
-    // is field getter
-    BOOL IsFieldGetter()
-    {
-        CONTRACT (BOOL)
-        {
-            NOTHROW;
-            GC_NOTRIGGER;
-            MODE_ANY;
-            PRECONDITION(IsFieldCall());
-        }
-        CONTRACT_END;
-        
-        RETURN (m_flags & enum_IsGetter);
-    }
-
     // is a virtual method
     BOOL IsVirtual()
     {
@@ -148,7 +117,6 @@ public:
             NOTHROW;
             GC_NOTRIGGER;
             MODE_ANY;
-            PRECONDITION(IsMethodCall());
         }
         CONTRACT_END;
         
@@ -247,7 +215,6 @@ public:
             NOTHROW;
             GC_NOTRIGGER;
             MODE_ANY;
-            PRECONDITION(!IsFieldCall());
             PRECONDITION(CheckPointer(m_pMD));
             POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
         }
@@ -264,7 +231,6 @@ public:
             NOTHROW;
             GC_NOTRIGGER;
             MODE_ANY;
-            PRECONDITION(!IsFieldCall());
             POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
             SUPPORTS_DAC;
         }
@@ -284,23 +250,6 @@ public:
         _ASSERTE(pMD != NULL);
         
         return pMD;
-    }
-
-    // get field desc
-    FieldDesc* GetFieldDesc()
-    {
-        CONTRACT (FieldDesc*)
-        {
-            NOTHROW;
-            GC_NOTRIGGER;
-            MODE_ANY;
-            PRECONDITION(IsFieldCall());
-            PRECONDITION(CheckPointer(m_pFD));
-            POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
-        }
-        CONTRACT_END;
-        
-        RETURN m_pFD;
     }
 
     // get module
@@ -326,7 +275,6 @@ public:
             NOTHROW;
             GC_NOTRIGGER;
             MODE_ANY;
-            PRECONDITION(IsMethodCall());
             PRECONDITION(CheckPointer(m_pMD));
         }
         CONTRACT_END;
@@ -370,7 +318,6 @@ public:
             NOTHROW;
             GC_NOTRIGGER;
             MODE_ANY;
-            PRECONDITION(IsMethodCall());
             PRECONDITION(CheckPointer(m_pMD));
         }
         CONTRACT_END;
@@ -420,14 +367,10 @@ private:
 
     // see ComCallFlags enum above
     DWORD   m_flags;
-    union
+    struct 
     {
-        struct 
-        {
-            MethodDesc*    m_pMD;
-            PTR_MethodDesc m_pInterfaceMD;
-        };
-        FieldDesc*  m_pFD;
+        MethodDesc*    m_pMD;
+        PTR_MethodDesc m_pInterfaceMD;
     };
 
     PCODE m_pILStub;        // IL stub for COM to CLR call, invokes GetCallMethodDesc()

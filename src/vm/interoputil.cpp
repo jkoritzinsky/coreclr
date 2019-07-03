@@ -3208,22 +3208,9 @@ ULONG GetStringizedClassItfDef(TypeHandle InterfaceType, CQuickArray<BYTE> &rDef
             ComMTMethodProps *pProps = &rProps[i];
             if (pProps->bMemberVisible)
             {
-                if (pProps->semantic < FieldSemanticOffset)
-                {
-                    pDeclaringMT = pProps->pMeth->GetMethodTable();
-                    tkMb = pProps->pMeth->GetMemberDef();
-                    cbCur = GetStringizedMethodDef(pDeclaringMT, tkMb, rDef, cbCur);
-                }
-                else
-                {
-                    ComCallMethodDesc   *pFieldMeth;    // A MethodDesc for a field call.
-                    FieldDesc   *pField;                // A FieldDesc.
-                    pFieldMeth = reinterpret_cast<ComCallMethodDesc*>(pProps->pMeth);
-                    pField = pFieldMeth->GetFieldDesc();
-                    pDeclaringMT = pField->GetApproxEnclosingMethodTable();
-                    tkMb = pField->GetMemberDef();
-                    cbCur = GetStringizedFieldDef(pDeclaringMT, tkMb, rDef, cbCur);
-                }
+                pDeclaringMT = pProps->pMeth->GetMethodTable();
+                tkMb = pProps->pMeth->GetMemberDef();
+                cbCur = GetStringizedMethodDef(pDeclaringMT, tkMb, rDef, cbCur);
             }
         }
     }

@@ -767,23 +767,6 @@ struct ComMethodTable
     // Gets the ComCallMethodDesc out of a Vtable slot correctly for all platforms
     ComCallMethodDesc* ComCallMethodDescFromSlot(unsigned i);
 
-    BOOL IsSlotAField(unsigned i)
-    {
-        CONTRACTL
-        {
-            WRAPPER(THROWS);
-            WRAPPER(GC_TRIGGERS);
-            MODE_ANY;
-            PRECONDITION(IsLayoutComplete());
-            PRECONDITION(i < m_cbSlots);
-        }
-        CONTRACTL_END;
-
-        i += GetNumExtraSlots(GetInterfaceType());
-        ComCallMethodDesc* pCMD = ComCallMethodDescFromSlot(i);
-        return pCMD->IsFieldCall();
-    }
-
     MethodDesc* GetMethodDescForSlot(unsigned i)
     {
         CONTRACT (MethodDesc*)
@@ -793,7 +776,6 @@ struct ComMethodTable
             MODE_ANY;
             PRECONDITION(IsLayoutComplete());
             PRECONDITION(i < m_cbSlots);
-            PRECONDITION(!IsSlotAField(i));
             POSTCONDITION(CheckPointer(RETVAL));
         }
         CONTRACT_END;
@@ -803,30 +785,8 @@ struct ComMethodTable
         ComCallMethodDesc* pCMD;
 
         pCMD = ComCallMethodDescFromSlot(i);
-        _ASSERTE(pCMD->IsMethodCall());
 
         RETURN pCMD->GetMethodDesc();
-    }
-
-    ComCallMethodDesc* GetFieldCallMethodDescForSlot(unsigned i)
-    {
-        CONTRACT (ComCallMethodDesc*)
-        {
-            WRAPPER(THROWS);
-            WRAPPER(GC_TRIGGERS);
-            MODE_ANY;
-            PRECONDITION(IsLayoutComplete());
-            PRECONDITION(i < m_cbSlots);
-            PRECONDITION(IsSlotAField(i));
-            POSTCONDITION(CheckPointer(RETVAL));
-        }
-        CONTRACT_END;
-        
-        i += GetNumExtraSlots(GetInterfaceType());
-        ComCallMethodDesc* pCMD = ComCallMethodDescFromSlot(i);
-
-        _ASSERTE(pCMD->IsFieldCall());
-        RETURN (ComCallMethodDesc *)pCMD;
     }
 
     BOOL OwnedbyThisMT(unsigned slotIndex)

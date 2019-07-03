@@ -485,7 +485,6 @@ public:
     void GenerateReturnIL(NDirectStubLinker* psl,
                           int argOffset, // the argument's index is m_paramidx + argOffset
                           BOOL fMngToNative,
-                          BOOL fieldGetter,
                           BOOL retval);
     
     void SetupArgumentSizes();
