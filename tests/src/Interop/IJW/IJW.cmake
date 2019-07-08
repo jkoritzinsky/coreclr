@@ -30,4 +30,5 @@ if (WIN32)
     string(REPLACE "/GR-" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   endif()
 
+  list(APPEND LINK_LIBRARIES_ADDITIONAL ijwhost)
 endif()
