@@ -1,5 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!--                                                                       -->
+  <!-- Task: DumpBundledRuntimeVersion                                       -->
+  <!--                                                                       -->
+  <!-- Notes:                                                                -->
+  <!--                                                                       -->
+  <!-- DumpBundledNETCoreAppPackageVersion is used by build-test.cmd to pass -->
+  <!-- the version information to cmake. The task will write a file to be    -->
+  <!-- read back by build-test.cmd. The path for the file is:                --> 
+  <!-- $(BundledRuntimeVersionOutputFile)                                    -->
+  <!--                                                                       -->
   <Target Name="DumpBundledRuntimeVersion">
-    <Message Importance="high" Text="$(BundledNETCoreAppPackageVersion)" />
+    <!-- Error if BundledRuntimeVersionOutputFile is not set. -->
+    <Error Condition="'$(BundledRuntimeVersionOutputFile)'==''" Text="BundledRuntimeVersionOutputFile must be passed as a property." />
+
+    <!-- Cleanup old version file -->
+    <Delete Files="$(BundledRuntimeVersionOutputFile)" Condition="Exists('$(BundledRuntimeVersionOutputFile)')" />
+    <WriteLinesToFile File="$(BundledRuntimeVersionOutputFile)" Lines="$(BundledNETCoreAppPackageVersion)" Overwrite="true"/>
+    <Message Text="BundledNETCoreAppPackageVersion: $(BundledNETCoreAppPackageVersion) written to: $(BundledRuntimeVersionOutputFile)" Importance="High" />
   </Target>
 </Project>

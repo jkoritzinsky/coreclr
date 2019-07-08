@@ -226,9 +226,19 @@ if not defined VSINSTALLDIR (
 )
 if not exist "%VSINSTALLDIR%DIA SDK" goto NoDIA
 
-for /f "tokens=*" %%s in ('call "%__ProjectDir%\dotnet.cmd" msbuild "%__TestDir%\dumpbundledruntimeversion.proj" /t:DumpBundledRuntimeVersion /nologo') do @(
-    set __BundledRuntimeVersion=%%s
+set __BundledRuntimeVersionOutputFile="%__NativeTestIntermediatesDir%\bundledruntimeversion.txt"
+call "%__ProjectDir%\dotnet.cmd" msbuild "%__TestDir%\dumpbundledruntimeversion.proj" /t:DumpBundledRuntimeVersion /nologo %__CommonMSBuildArgs% /p:BundledRuntimeVersionOutputFile="!__BundledRuntimeVersionOutputFile!"
+
+if not !errorlevel! == 0 (
+    echo "Failed to determine SDK-bundled runtime version."
+    exit /b !errorlevel!
 )
+if not exist "!__BundledRuntimeVersionOutputFile!" (
+    echo "Failed to determine SDK-bundled runtime version."
+    exit /b 1
+)
+
+set /p __BundledRuntimeVersion=<"!__BundledRuntimeVersionOutputFile!"
 
 pushd "%__NativeTestIntermediatesDir%"
 set __ExtraCmakeArgs="-DCMAKE_SYSTEM_VERSION=10.0" "-DDOTNET_RUNTIME_VERSION=!__BundledRuntimeVersion!"
