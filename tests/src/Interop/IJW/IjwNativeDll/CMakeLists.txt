@@ -1,6 +1,5 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 3.12)
 project (IjwNativeDll)
-include("../IJW.cmake")
 
 include_directories( ${INC_PLATFORM_DIR} )
 set(SOURCES IjwNativeDll.cpp)
@@ -8,6 +7,7 @@ set(SOURCES IjwNativeDll.cpp)
 # add the shared library
 add_library (IjwNativeDll SHARED ${SOURCES})
 target_link_libraries(IjwNativeDll ${LINK_LIBRARIES_ADDITIONAL})
+set_target_properties(IjwNativeDll PROPERTIES COMMON_LANGUAGE_RUNTIME netcore)
 
 # add the install targets
 install (TARGETS IjwNativeDll DESTINATION bin)

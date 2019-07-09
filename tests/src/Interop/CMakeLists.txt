@@ -1,12 +1,16 @@
 if(WIN32)
-    list(APPEND LINK_LIBRARIES_ADDITIONAL
-        ole32.lib
-        advapi32.lib
-        OleAut32.lib
-    )
-endif(WIN32)
+  list(APPEND LINK_LIBRARIES_ADDITIONAL
+      ole32.lib
+      advapi32.lib
+      OleAut32.lib
+  )
+    
+  list(APPEND LINK_LIBRARIES_ADDITIONAL
+  platformdefines
+  $<$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>:ijwhost>)
 
-list(APPEND LINK_LIBRARIES_ADDITIONAL platformdefines)
+  add_compile_options($<$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>:/AI${CMAKE_SOURCE_DIR}/../.dotnet/packs/Microsoft.NETCore.App.Ref/${DOTNET_RUNTIME_VERSION}/ref/netcoreapp3.0>)
+endif(WIN32)
 
 # Consumed by native test assets
 SET(CLR_INTEROP_TEST_ROOT ${CMAKE_CURRENT_SOURCE_DIR})

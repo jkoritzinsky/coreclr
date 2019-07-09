@@ -573,7 +573,7 @@ if (MSVC)
   add_compile_options(/Gy) # separate functions for linker
   add_compile_options(/Zc:wchar_t-) # C++ language conformance: wchar_t is NOT the native type, but a typedef
   add_compile_options(/Zc:forScope) # C++ language conformance: enforce Standard C++ for scoping rules
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR-") # disable C++ RTTI
+  add_compile_options($<$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>:/GR->) # disable C++ RTTI
   add_compile_options(/FC) # use full pathnames in diagnostics
   add_compile_options(/MP) # Build with Multiple Processes (number of processes equal to the number of processors)
   add_compile_options(/GS) # Buffer Security Check
@@ -597,18 +597,17 @@ if (MSVC)
 
   # enable control-flow-guard support for native components for non-Arm64 builds
   # Added using variables instead of add_compile_options to let individual projects override it
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /guard:cf")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf")
+  add_compile_options($<$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>:/guard:cf>)
 
   # Statically linked CRT (libcmt[d].lib, libvcruntime[d].lib and libucrt[d].lib) by default. This is done to avoid
   # linking in VCRUNTIME140.DLL for a simplified xcopy experience by reducing the dependency on VC REDIST.
   #
+  # Mixed-mode DLLs (used in our test tree) need to link against the dynamically-linked CRT.
+  #
   # For Release builds, we shall dynamically link into uCRT [ucrtbase.dll] (which is pushed down as a Windows Update on downlevel OS) but
   # wont do the same for debug/checked builds since ucrtbased.dll is not redistributable and Debug/Checked builds are not
   # production-time scenarios.
-
-  add_compile_options($<$<OR:$<OR:$<CONFIG:Release>,$<CONFIG:Relwithdebinfo>>,$<BOOL:$<TARGET_PROPERTY:DAC_COMPONENT>>>:/MT>)
-  add_compile_options($<$<AND:$<OR:$<CONFIG:Debug>,$<CONFIG:Checked>>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DAC_COMPONENT>>>>:/MTd>)
+  add_compile_options(/M$<IF:$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>,T,D>$<$<AND:$<OR:$<CONFIG:Debug>,$<CONFIG:Checked>>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DAC_COMPONENT>>>>:d>)
 
   add_compile_options($<$<COMPILE_LANGUAGE:ASM_MASM>:/ZH:SHA_256>)
 
@@ -617,7 +616,13 @@ if (MSVC)
     add_definitions(-DDISABLE_CONTRACTS)
   endif (CLR_CMAKE_TARGET_ARCH_ARM OR CLR_CMAKE_TARGET_ARCH_ARM64)
 
-endif (MSVC)
+  # Convert the /RTC1 flag to being added via a generator expression so we can automatically disable it for
+  # mixed mode assemblies.
+  if (CMAKE_CXX_FLAGS_DEBUG MATCHES "/RTC1")
+    string(REPLACE "/RTC1" " " CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    add_compile_options($<$<AND:$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>,$<CONFIG:DEBUG>>:/RTC1>)
+  endif()
+endif (WIN32)
 
 if(CLR_CMAKE_ENABLE_CODE_COVERAGE)
 

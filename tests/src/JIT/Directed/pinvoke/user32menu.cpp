@@ -10,6 +10,7 @@
 
 #if defined(_MSC_VER)
 #define EXPORT_API extern "C" __declspec(dllexport)
+#pragma warning(disable:4297) // Ignore that some of the test methods throw C++ exceptions even though they are extern "C"
 #else
 #define EXPORT_API extern "C" __attribute__((visibility("default")))
 
