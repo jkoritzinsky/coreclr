@@ -607,7 +607,7 @@ if (MSVC)
   # For Release builds, we shall dynamically link into uCRT [ucrtbase.dll] (which is pushed down as a Windows Update on downlevel OS) but
   # wont do the same for debug/checked builds since ucrtbased.dll is not redistributable and Debug/Checked builds are not
   # production-time scenarios.
-  add_compile_options(/M$<IF:$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>,T,D>$<$<AND:$<OR:$<CONFIG:Debug>,$<CONFIG:Checked>>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DAC_COMPONENT>>>>:d>)
+  add_compile_options(/M$<IF:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>,D,T>$<$<AND:$<OR:$<CONFIG:Debug>,$<CONFIG:Checked>>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DAC_COMPONENT>>>>:d>)
 
   add_compile_options($<$<COMPILE_LANGUAGE:ASM_MASM>:/ZH:SHA_256>)
 
