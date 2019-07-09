@@ -246,6 +246,10 @@ namespace R2RDump
         READYTORUN_HELPER_PersonalityRoutine = 0xF0,
         READYTORUN_HELPER_PersonalityRoutineFilterFunclet = 0xF1,
 
+        // Synchronized methods
+        READYTORUN_HELPER_MonitorEnter = 0xF8,
+        READYTORUN_HELPER_MonitorExit = 0xF9,
+
         //
         // Deprecated/legacy
         //
@@ -266,9 +270,6 @@ namespace R2RDump
 
         // JIT32 x86-specific exception handling
         READYTORUN_HELPER_EndCatch = 0x110,
-
-        // A flag to indicate that a helper call uses VSD
-        READYTORUN_HELPER_FLAG_VSD = 0x10000000,
     }
 
     public enum CorElementType : byte
