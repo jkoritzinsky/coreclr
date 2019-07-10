@@ -596,7 +596,7 @@ if (MSVC)
   endif (CLR_CMAKE_PLATFORM_ARCH_AMD64)
 
   # enable control-flow-guard support for native components for non-Arm64 builds
-  # Added using variables instead of add_compile_options to let individual projects override it
+  # disable for mixed-mode assemblies since the flag is incompatible with mixed-mode.
   add_compile_options($<$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>:/guard:cf>)
 
   # Statically linked CRT (libcmt[d].lib, libvcruntime[d].lib and libucrt[d].lib) by default. This is done to avoid
@@ -622,7 +622,7 @@ if (MSVC)
     string(REPLACE "/RTC1" " " CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     add_compile_options($<$<AND:$<NOT:$<BOOL:$<TARGET_PROPERTY:COMMON_LANGUAGE_RUNTIME>>>,$<CONFIG:DEBUG>>:/RTC1>)
   endif()
-endif (WIN32)
+endif (MSVC)
 
 if(CLR_CMAKE_ENABLE_CODE_COVERAGE)
 
